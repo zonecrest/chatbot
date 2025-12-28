@@ -1,0 +1,46 @@
+{
+  "document": "Value Added Tax Act, 2013 (Act 870)",
+  "description": "Sample Q&A pairs for VAT-related questions",
+  "qa_pairs": [
+    {
+      "question": "What is the VAT rate in Ghana?",
+      "answer": "The standard VAT rate in Ghana is 15% (comprising 12.5% VAT and 2.5% NHIL/GETFund levies). This applies to most goods and services unless specifically exempted or zero-rated.",
+      "section": "Section 3",
+      "excerpt": "There is imposed a tax to be known as value added tax on the supply of goods and services and the importation of goods at the rate of twelve and a half percent of the value of the supply or importation.",
+      "page": 5,
+      "keywords": ["VAT", "rate", "percent", "15%", "12.5%", "tax rate"]
+    },
+    {
+      "question": "Who must register for VAT?",
+      "answer": "Any person making taxable supplies with an annual turnover exceeding GH₵200,000 must register for VAT. Voluntary registration is also available for businesses below the threshold.",
+      "section": "Section 6(1)",
+      "excerpt": "A person who makes taxable supplies and whose taxable turnover during any period of twelve months exceeds the threshold is required to apply for registration.",
+      "page": 8,
+      "keywords": ["register", "registration", "threshold", "turnover", "200000"]
+    },
+    {
+      "question": "Are food items exempt from VAT?",
+      "answer": "Basic food items including unprocessed cereals, tubers, fruits, vegetables, and fish are exempt from VAT. However, processed or packaged foods may be subject to VAT.",
+      "section": "First Schedule - Exempt Supplies",
+      "excerpt": "The following supplies of goods are exempt from VAT: (a) agricultural products in their raw state including cereals, tubers, fruits, vegetables, groundnuts, and palm produce...",
+      "page": 42,
+      "keywords": ["food", "exempt", "exemption", "rice", "yam", "fish", "vegetables"]
+    },
+    {
+      "question": "Do I pay VAT on exported goods?",
+      "answer": "No, exported goods are zero-rated for VAT purposes. This means you don't charge VAT on exports, but you can still claim input VAT credits on your business expenses.",
+      "section": "Section 15(1)(a)",
+      "excerpt": "The following supplies of goods or services are zero-rated: (a) the export of goods or services;",
+      "page": 12,
+      "keywords": ["export", "zero", "rated", "cocoa", "goods", "international"]
+    },
+    {
+      "question": "How do I file VAT returns?",
+      "answer": "VAT returns must be filed monthly, by the last working day of the month following the tax period. You can file online via the GRA Taxpayer Portal or at any GRA office.",
+      "section": "Section 36",
+      "excerpt": "A taxable person shall file a return for each tax period within the time specified and pay any tax due.",
+      "page": 28,
+      "keywords": ["file", "return", "monthly", "deadline", "portal"]
+    }
+  ]
+}

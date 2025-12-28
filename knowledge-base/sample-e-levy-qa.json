@@ -1,0 +1,38 @@
+{
+  "document": "Electronic Transfer Levy Act, 2022 (Act 1075)",
+  "description": "Sample Q&A pairs for E-Levy related questions",
+  "qa_pairs": [
+    {
+      "question": "What is E-Levy?",
+      "answer": "E-Levy (Electronic Transfer Levy) is a tax on electronic transactions in Ghana. It applies to mobile money transfers, bank transfers, and other electronic payments above the daily threshold.",
+      "section": "Section 1",
+      "excerpt": "There is imposed on the transfer of money by electronic means a levy to be known as the Electronic Transfer Levy.",
+      "page": 1,
+      "keywords": ["e-levy", "elevy", "electronic", "transfer", "levy", "mobile money", "momo"]
+    },
+    {
+      "question": "How much is E-Levy on mobile money?",
+      "answer": "The E-Levy rate is currently 1% on electronic transfers above GH₵100 per day. Transfers of GH₵100 or below per day are exempt from the levy.",
+      "section": "Section 2",
+      "excerpt": "The rate of the levy imposed under section 1 is one percent of the value of the electronic transfer above the threshold.",
+      "page": 2,
+      "keywords": ["e-levy", "rate", "percent", "1%", "momo", "mobile", "amount"]
+    },
+    {
+      "question": "Who is exempt from E-Levy?",
+      "answer": "Several transfers are exempt from E-Levy including: transfers of GH₵100 or less per day, transfers for payment of taxes, transfers between accounts of the same person, salary payments, and social security contributions.",
+      "section": "Section 4",
+      "excerpt": "The following electronic transfers are exempt from the levy: (a) transfers of one hundred Ghana cedis or less per day...",
+      "page": 3,
+      "keywords": ["e-levy", "exempt", "exemption", "free", "exclude"]
+    },
+    {
+      "question": "Does E-Levy apply to bank transfers?",
+      "answer": "Yes, E-Levy applies to bank transfers above the GH₵100 daily threshold. This includes transfers between different banks and within the same bank to different account holders.",
+      "section": "Section 1(2)",
+      "excerpt": "Electronic transfer includes bank transfers, mobile money transfers, and other forms of electronic fund transfers.",
+      "page": 1,
+      "keywords": ["bank", "transfer", "e-levy", "electronic"]
+    }
+  ]
+}

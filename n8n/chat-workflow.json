@@ -1,0 +1,186 @@
+{
+  "name": "GRA Chatbot - Main Chat",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "chat",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "chat-webhook",
+      "name": "Webhook: Chat",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [220, 300],
+      "webhookId": "chat"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract input from webhook\nconst input = $input.first().json.body;\n\nconst message = input.message || '';\nconst conversationId = input.conversation_id || 'default';\nconst language = input.language || 'en';\nconst userId = input.user_id || 'anonymous';\n\n// Pass through for next nodes\nreturn {\n  json: {\n    message,\n    conversationId,\n    language,\n    userId,\n    timestamp: new Date().toISOString()\n  }\n};"
+      },
+      "id": "extract-input",
+      "name": "Extract Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o-mini",
+        "options": {
+          "temperature": 0.3
+        }
+      },
+      "id": "ai-agent",
+      "name": "AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.6,
+      "position": [660, 300],
+      "notesInFlow": true,
+      "notes": "Configure with OpenAI or Anthropic credentials"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "You are Kofi, a helpful and friendly GRA (Ghana Revenue Authority) tax assistant.\n\nCRITICAL RULES:\n1. ONLY answer questions using the provided context from official Ghana tax documents.\n2. If the answer is NOT in the provided context, say: \"I don't have specific information about that in my knowledge base. Please contact the GRA Call Centre at 0800-900-110 for assistance.\"\n3. NEVER make up tax rates, deadlines, or legal requirements.\n4. ALWAYS cite your source using this format: [Source: Document Name, Section X]\n5. Use simple, clear language that a market trader can understand.\n6. Be warm and encouraging - many users find tax intimidating.\n\nLANGUAGE HANDLING:\n- If the user writes in Pidgin English, respond in similar Pidgin.\n- If the user writes in Twi-English mix, acknowledge their language.\n- Always be respectful of local communication styles.\n\nRESPONSE FORMAT:\n- Start with a direct answer\n- Provide brief explanation if needed\n- End with the citation\n- If relevant, suggest related questions they might have\n\nUser Question: {{ $json.message }}\nLanguage: {{ $json.language }}"
+      },
+      "id": "system-prompt",
+      "name": "System Prompt",
+      "type": "@n8n/n8n-nodes-langchain.text",
+      "typeVersion": 1,
+      "position": [660, 500]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "vector-store-retriever",
+      "name": "Vector Store Retriever",
+      "type": "@n8n/n8n-nodes-langchain.retrieverVectorStore",
+      "typeVersion": 1,
+      "position": [660, 140],
+      "notesInFlow": true,
+      "notes": "Connect to In-Memory or Supabase Vector Store"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format the AI response with citations\nconst aiResponse = $input.first().json;\nconst originalInput = $('Extract Input').first().json;\n\n// Parse AI response to extract citation if present\nlet responseText = aiResponse.output || aiResponse.text || '';\nlet citations = [];\n\n// Try to extract citation from response\nconst citationMatch = responseText.match(/\\[Source: ([^\\]]+)\\]/);\nif (citationMatch) {\n  const citationParts = citationMatch[1].split(',');\n  citations.push({\n    document: citationParts[0]?.trim() || 'Ghana Tax Law',\n    section: citationParts[1]?.trim() || 'General',\n    excerpt: 'Retrieved from official GRA documentation',\n    page: 1\n  });\n  // Remove citation from visible text\n  responseText = responseText.replace(/\\[Source: [^\\]]+\\]/g, '').trim();\n}\n\nreturn {\n  json: {\n    success: true,\n    response: {\n      text: responseText,\n      citations: citations,\n      confidence: citations.length > 0 ? 0.9 : 0.5,\n      language_detected: originalInput.language,\n      suggested_followups: [\n        'How do I register for VAT?',\n        'What is the E-Levy rate?'\n      ]\n    },\n    conversation_id: originalInput.conversationId\n  }\n};"
+      },
+      "id": "format-response",
+      "name": "Format Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [880, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              }
+            ]
+          }
+        }
+      },
+      "id": "respond",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1100, 300]
+    },
+    {
+      "parameters": {
+        "content": "## GRA Chatbot - Main Chat Workflow\n\nThis workflow handles incoming chat messages:\n\n1. **Webhook** - Receives chat messages\n2. **Extract Input** - Parses the request\n3. **Vector Store** - Retrieves relevant documents\n4. **AI Agent** - Generates response using context\n5. **Format Response** - Adds citations\n6. **Respond** - Returns to frontend\n\n### Setup Required:\n- OpenAI or Anthropic API credentials\n- Vector Store with Ghana tax documents\n- Google Sheets for logging (optional)"
+      },
+      "id": "sticky-note",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [180, 60]
+    }
+  ],
+  "connections": {
+    "Webhook: Chat": {
+      "main": [
+        [
+          {
+            "node": "Extract Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Input": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Format Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Response": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Vector Store Retriever": {
+      "ai_retriever": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_retriever",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "System Prompt": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    { "name": "Ghana" },
+    { "name": "Chatbot" },
+    { "name": "GRA" }
+  ]
+}

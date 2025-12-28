@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="description" content="Ask GRA - Your 24/7 AI Tax Assistant for Ghana Revenue Authority questions">
+  <meta name="theme-color" content="#003366">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+  <title>Ask GRA - Your Tax Assistant</title>
+
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/svg+xml" href="assets/icons/favicon.svg">
+  <link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body data-page="chat">
+  <!-- Offline Banner -->
+  <div id="offline-banner" class="offline-banner">
+    You're offline. Messages will be sent when connection is restored.
+  </div>
+
+  <div class="chat-container">
+    <!-- Header -->
+    <header class="chat-header">
+      <div class="header-avatar">K</div>
+      <div class="header-info">
+        <div class="header-title">
+          <span class="flag">🇬🇭</span>
+          Ask GRA
+        </div>
+        <div class="header-subtitle">Your 24/7 Tax Assistant</div>
+        <div class="header-status">
+          <span class="status-dot"></span>
+          <span>Online</span>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button class="header-btn" onclick="App.newConversation()" title="New Conversation">
+          ➕
+        </button>
+        <a href="admin.html" class="header-btn" title="Admin Panel">
+          ⚙️
+        </a>
+      </div>
+    </header>
+
+    <!-- Language Selector -->
+    <div class="language-bar">
+      <button class="lang-btn active" data-lang="en">English</button>
+      <button class="lang-btn" data-lang="pidgin">Pidgin</button>
+      <button class="lang-btn" data-lang="twi">Twi</button>
+      <button class="lang-btn" data-lang="ga">Ga</button>
+      <button class="lang-btn" data-lang="ewe">Ewe</button>
+    </div>
+
+    <!-- Chat Messages -->
+    <div id="chat-messages" class="chat-messages">
+      <!-- Messages will be inserted here -->
+    </div>
+
+    <!-- Typing Indicator -->
+    <div id="typing-indicator" class="typing-indicator hidden">
+      <div class="message-avatar">K</div>
+      <div class="typing-bubble">
+        <span class="typing-dot"></span>
+        <span class="typing-dot"></span>
+        <span class="typing-dot"></span>
+      </div>
+    </div>
+
+    <!-- Suggestions -->
+    <div class="suggestions">
+      <div class="suggestions-title">Quick Questions</div>
+      <div id="suggestions-list" class="suggestions-list">
+        <!-- Suggestions will be inserted here -->
+      </div>
+    </div>
+
+    <!-- Input Area -->
+    <div class="chat-input-area">
+      <div class="chat-input-wrapper">
+        <textarea
+          id="chat-input"
+          class="chat-input"
+          placeholder="Ask me about Ghana taxes..."
+          rows="1"
+          autocomplete="off"
+        ></textarea>
+      </div>
+      <button id="send-btn" class="send-btn">
+        ➤
+      </button>
+    </div>
+  </div>
+
+  <!-- Citation Modal -->
+  <div id="citation-modal" class="modal-overlay">
+    <div class="modal">
+      <div class="modal-header">
+        <span class="modal-title">📄 Source Document</span>
+        <button class="modal-close" onclick="App.closeCitationModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="modal-doc-name" class="modal-doc-name">Document Name</div>
+        <div id="modal-section" class="modal-section">Section</div>
+        <div id="modal-excerpt" class="modal-excerpt">Excerpt text...</div>
+      </div>
+      <div class="modal-footer">
+        <span class="modal-footer-icon">✓</span>
+        <span>This citation was retrieved from official GRA documentation</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="toast"></div>
+
+  <!-- Scripts -->
+  <script src="js/config.js"></script>
+  <script src="js/storage.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/chat.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

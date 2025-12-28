@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Ask GRA Admin Dashboard - Monitor chatbot performance">
+  <meta name="theme-color" content="#003366">
+  <meta name="robots" content="noindex, nofollow">
+
+  <title>Admin - Ask GRA</title>
+
+  <link rel="icon" type="image/svg+xml" href="assets/icons/favicon.svg">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body data-page="admin">
+  <div class="admin-container">
+    <!-- Back Link -->
+    <a href="index.html" class="admin-back">
+      ← Back to Chat
+    </a>
+
+    <!-- Header -->
+    <header class="admin-header">
+      <h1>🇬🇭 Ask GRA Admin</h1>
+      <p>Monitor chatbot performance and conversations</p>
+    </header>
+
+    <!-- Stats Grid -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div id="stat-conversations" class="stat-value">0</div>
+        <div class="stat-label">Chats Today</div>
+      </div>
+      <div class="stat-card">
+        <div id="stat-messages" class="stat-value">0</div>
+        <div class="stat-label">Messages Today</div>
+      </div>
+      <div class="stat-card">
+        <div id="stat-total" class="stat-value">0</div>
+        <div class="stat-label">Total Chats</div>
+      </div>
+      <div class="stat-card">
+        <div id="stat-answered" class="stat-value">100%</div>
+        <div class="stat-label">Answered Rate</div>
+      </div>
+    </div>
+
+    <!-- Top Questions -->
+    <section class="admin-section">
+      <h2>📊 Top Questions</h2>
+      <ul id="top-questions" class="question-list">
+        <li class="question-item"><span class="text-gray">Loading...</span></li>
+      </ul>
+    </section>
+
+    <!-- Unanswered Questions -->
+    <section class="admin-section">
+      <h2>❓ Unanswered Questions</h2>
+      <p class="text-sm text-gray mb-1">Questions where the bot couldn't provide an answer</p>
+      <ul id="unanswered-questions" class="question-list">
+        <li class="question-item"><span class="text-gray">Loading...</span></li>
+      </ul>
+    </section>
+
+    <!-- Recent Conversations -->
+    <section class="admin-section">
+      <h2>💬 Recent Conversations</h2>
+      <div id="conversation-list" class="conversation-list">
+        <div class="text-gray text-center">Loading...</div>
+      </div>
+    </section>
+
+    <!-- Knowledge Base Status -->
+    <section class="admin-section">
+      <h2>📚 Knowledge Base</h2>
+      <p class="text-sm text-gray mb-1">Documents loaded in the chatbot</p>
+
+      <div style="background: #f5f5f5; padding: 1rem; border-radius: 8px; margin-top: 1rem;">
+        <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+          <span>VAT Act 2013 (Sample)</span>
+          <span style="color: #4CAF50;">✓ Loaded</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+          <span>Income Tax Act 2015 (Sample)</span>
+          <span style="color: #4CAF50;">✓ Loaded</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+          <span>E-Levy Act 2022 (Sample)</span>
+          <span style="color: #4CAF50;">✓ Loaded</span>
+        </div>
+        <div style="display: flex; justify-content: space-between;">
+          <span>Revenue Admin Act 2016 (Sample)</span>
+          <span style="color: #4CAF50;">✓ Loaded</span>
+        </div>
+      </div>
+
+      <p class="text-xs text-gray mt-2">
+        Note: Demo mode uses sample Q&A pairs. For production, import full PDFs via n8n ingestion workflow.
+      </p>
+    </section>
+
+    <!-- Demo Mode Notice -->
+    <section class="admin-section" style="background: #fff3cd; border-left: 4px solid #ffc107;">
+      <h2 style="color: #856404;">⚠️ Demo Mode Active</h2>
+      <p class="text-sm" style="color: #856404;">
+        This chatbot is running in demo mode with sample data. All conversations are stored locally in your browser.
+        To connect to a live n8n backend with real document ingestion, update the webhook URL in config.js.
+      </p>
+    </section>
+
+    <!-- n8n Integration -->
+    <section class="admin-section">
+      <h2>🔗 n8n Integration</h2>
+
+      <div style="background: #f5f5f5; padding: 1rem; border-radius: 8px;">
+        <label style="font-size: 0.875rem; font-weight: 500;">Webhook URL</label>
+        <input
+          type="text"
+          style="width: 100%; padding: 0.75rem; margin-top: 0.5rem; border: 1px solid #ddd; border-radius: 8px; font-family: monospace; font-size: 0.75rem;"
+          value="https://YOUR-N8N-INSTANCE.app.n8n.cloud/webhook"
+          readonly
+        >
+        <p class="text-xs text-gray mt-1">
+          Update this in frontend/js/config.js to connect to your n8n instance.
+        </p>
+      </div>
+
+      <div style="margin-top: 1rem;">
+        <h4 style="font-size: 0.875rem; margin-bottom: 0.5rem;">Available Workflows:</h4>
+        <ul style="font-size: 0.875rem; color: #666; margin-left: 1.5rem;">
+          <li>chat-workflow.json - Main chat endpoint</li>
+          <li>ingest-workflow.json - Document ingestion</li>
+          <li>admin-workflow.json - Statistics endpoints</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- Actions -->
+    <section class="admin-section">
+      <h2>🛠️ Actions</h2>
+
+      <button
+        onclick="App.loadAdminStats()"
+        style="width: 100%; padding: 0.875rem; margin-bottom: 0.75rem; background: #003366; color: white; border: none; border-radius: 8px; font-size: 1rem; cursor: pointer;"
+      >
+        🔄 Refresh Stats
+      </button>
+
+      <button
+        onclick="App.clearAllData()"
+        style="width: 100%; padding: 0.875rem; background: #dc3545; color: white; border: none; border-radius: 8px; font-size: 1rem; cursor: pointer;"
+      >
+        🗑️ Clear All Data
+      </button>
+    </section>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="toast"></div>
+
+  <!-- Scripts -->
+  <script src="js/config.js"></script>
+  <script src="js/storage.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/chat.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

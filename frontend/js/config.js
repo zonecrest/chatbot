@@ -69,12 +69,37 @@ const CONFIG = {
     CONVERSATIONS: '/conversations'
   },
 
+  // Voice settings
+  VOICE: {
+    // Speech recognition language (browser's Web Speech API)
+    STT_LANG: 'en-GH',  // Ghana English
+
+    // Speech synthesis settings
+    TTS: {
+      lang: 'en-GH',
+      rate: 0.9,        // Slightly slower for clarity
+      pitch: 1.0,
+      volume: 1.0
+    },
+
+    // Auto-play TTS on new responses
+    AUTO_PLAY: false,
+
+    // Supported languages for STT
+    STT_SUPPORTED: ['en', 'pidgin'],
+
+    // Supported languages for TTS (all, but quality varies)
+    TTS_SUPPORTED: ['en', 'pidgin', 'twi', 'ga', 'ewe']
+  },
+
   // Local storage keys
   STORAGE_KEYS: {
     CONVERSATIONS: 'gra_conversations',
     CURRENT_CONVERSATION: 'gra_current_conversation',
     LANGUAGE: 'gra_language',
-    USER_ID: 'gra_user_id'
+    USER_ID: 'gra_user_id',
+    VOICE_ENABLED: 'askgra_voice_enabled',
+    AUTO_PLAY_TTS: 'askgra_auto_play_tts'
   },
 
   // Check if n8n is configured
@@ -93,3 +118,5 @@ Object.freeze(CONFIG);
 Object.freeze(CONFIG.LANGUAGES);
 Object.freeze(CONFIG.ENDPOINTS);
 Object.freeze(CONFIG.STORAGE_KEYS);
+Object.freeze(CONFIG.VOICE);
+Object.freeze(CONFIG.VOICE.TTS);

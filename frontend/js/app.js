@@ -17,10 +17,36 @@ const App = {
     this._initOfflineDetection();
     this._initPageSpecific();
 
+    // Initialize voice module
+    this._initVoice();
+
     console.log('App initialized', {
       language: this.currentLanguage,
       demoMode: CONFIG.DEMO_MODE
     });
+  },
+
+  /**
+   * Initialize voice module
+   */
+  _initVoice() {
+    if (typeof Voice !== 'undefined') {
+      Voice.init();
+
+      // Handle voice transcription
+      Voice.onTranscript = (text) => {
+        const input = document.getElementById('chat-input');
+        if (input) {
+          input.value = text;
+          input.classList.remove('voice-preview');
+        }
+      };
+
+      // Handle voice errors
+      Voice.onError = (message) => {
+        this.showToast(message);
+      };
+    }
   },
 
   /**
@@ -43,6 +69,11 @@ const App = {
         // Save language
         this.currentLanguage = btn.dataset.lang;
         Storage.setLanguage(this.currentLanguage);
+
+        // Dispatch event for voice module
+        window.dispatchEvent(new CustomEvent('languageChanged', {
+          detail: { language: this.currentLanguage }
+        }));
 
         this.showToast(`Language changed to ${CONFIG.LANGUAGES[this.currentLanguage]}`);
       });

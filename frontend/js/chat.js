@@ -196,8 +196,9 @@ const Chat = {
       `;
     }
 
+    const messageId = msg.id || 'msg-' + Date.now();
     const html = `
-      <div class="message bot">
+      <div class="message bot" data-message-id="${messageId}">
         <div class="message-avatar">${CONFIG.BOT_AVATAR}</div>
         <div class="message-content">
           <div class="message-text">${this.formatText(msg.content)}</div>
@@ -209,6 +210,14 @@ const Chat = {
     `;
 
     this.messagesContainer.insertAdjacentHTML('beforeend', html);
+
+    // Add speak button if voice is available
+    if (typeof Voice !== 'undefined' && Voice.isTTSAvailable()) {
+      const messageEl = this.messagesContainer.querySelector(`[data-message-id="${messageId}"]`);
+      if (messageEl) {
+        Voice.addSpeakButton(messageEl, msg.content);
+      }
+    }
 
     // Render suggestions if present
     if (msg.suggested_followups && msg.suggested_followups.length > 0) {

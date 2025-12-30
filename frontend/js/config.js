@@ -79,7 +79,7 @@ const CONFIG = {
 
   // Check if n8n is configured
   isN8nConfigured() {
-    return !this.N8N_WEBHOOK_URL.includes('https://zonecrest.app.n8n.cloud/webhook');
+    return !this.N8N_WEBHOOK_URL.includes('YOUR-N8N-INSTANCE');
   },
 
   // Get full endpoint URL

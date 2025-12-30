@@ -1,0 +1,535 @@
+{
+  "name": "GRA Chatbot - Chat Controller",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "chat-v2",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "receive-chat-query",
+      "name": "Receive Chat Query",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [220, 300],
+      "webhookId": "chat-v2"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate and prepare input from webhook\nconst input = $input.first().json.body;\n\n// Validate required fields\nif (!input.message || typeof input.message !== 'string') {\n  return {\n    json: {\n      error: true,\n      message: 'Missing or invalid message field'\n    }\n  };\n}\n\n// Clean and prepare input\nconst cleanedMessage = input.message.trim();\nif (cleanedMessage.length < 2) {\n  return {\n    json: {\n      error: true,\n      message: 'Message too short'\n    }\n  };\n}\n\n// Generate conversation ID if not provided\nconst conversationId = input.conversation_id || `conv_${Date.now()}`;\n\nreturn {\n  json: {\n    message: cleanedMessage,\n    conversation_id: conversationId,\n    language: input.language || 'en',\n    user_id: input.user_id || 'anonymous',\n    history: input.history || [],\n    timestamp: new Date().toISOString()\n  }\n};"
+      },
+      "id": "validate-input",
+      "name": "Validate Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.error }}",
+                    "rightValue": true,
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "error"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.error }}",
+                    "rightValue": true,
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "notEquals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "valid"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "check-validation",
+      "name": "Check Validation",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [660, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Return error response for invalid input\nconst input = $input.first().json;\n\nreturn {\n  json: {\n    success: false,\n    response: {\n      text: input.message || 'Invalid request. Please provide a valid message.',\n      citations: [],\n      domain: 'error',\n      confidence: 0,\n      suggested_followups: []\n    },\n    conversation_id: null,\n    error: input.message\n  }\n};"
+      },
+      "id": "return-error-response",
+      "name": "Return Error Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [880, 160]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4-turbo",
+        "options": {
+          "temperature": 0.1
+        },
+        "messages": {
+          "values": [
+            {
+              "type": "system",
+              "content": "You are a query classifier for the Ghana Revenue Authority chatbot.\nClassify user queries into tax domains.\nReturn ONLY valid JSON.\n\nAvailable domains:\n- \"vat\" - Value Added Tax questions (rates, registration, exemptions, zero-rating, input credits)\n- \"income_tax\" - Income Tax questions (personal tax, corporate tax, PAYE, tax bands, deductions)\n- \"general\" - General questions that don't fit a specific domain OR need clarification\n- \"greeting\" - Greetings, thanks, goodbyes (not tax questions)"
+            },
+            {
+              "type": "user",
+              "content": "=Classify this query:\n\nUser message: {{ $json.message }}\n\nRecent conversation context:\n{{ JSON.stringify($json.history.slice(-4)) }}\n\nReturn JSON:\n{\n  \"domain\": \"vat\" | \"income_tax\" | \"general\" | \"greeting\",\n  \"confidence\": 0.0-1.0,\n  \"reasoning\": \"Brief explanation of classification\",\n  \"reformulated_query\": \"The query rewritten as a clear tax question (or null for greetings)\"\n}"
+            }
+          ]
+        }
+      },
+      "id": "classify-query",
+      "name": "Classify Query",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [880, 400],
+      "notesInFlow": true,
+      "notes": "Uses GPT-4 to classify query domain"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse classification result from OpenAI\nconst input = $('Validate Input').first().json;\nconst response = $input.first().json;\n\nlet classification;\ntry {\n  let content = response.message?.content || response.content;\n  if (typeof content === 'string') {\n    content = content.replace(/```json\\n?/g, '').replace(/```\\n?/g, '');\n    classification = JSON.parse(content);\n  } else {\n    classification = content;\n  }\n} catch (e) {\n  // Default to general if parsing fails\n  classification = {\n    domain: 'general',\n    confidence: 0.5,\n    reasoning: 'Failed to parse classification',\n    reformulated_query: input.message\n  };\n}\n\nreturn {\n  json: {\n    ...input,\n    classification: classification,\n    query_for_specialist: classification.reformulated_query || input.message\n  }\n};"
+      },
+      "id": "parse-classification",
+      "name": "Parse Classification",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 400]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.classification.domain }}",
+                    "rightValue": "vat",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "vat"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.classification.domain }}",
+                    "rightValue": "income_tax",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "income_tax"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.classification.domain }}",
+                    "rightValue": "greeting",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "greeting"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.classification.domain }}",
+                    "rightValue": "general",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "general"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "route-by-domain",
+      "name": "Route by Domain",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [1320, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.N8N_BASE_URL || 'https://your-n8n-instance.app.n8n.cloud' }}/webhook/vat-specialist",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"message\": \"{{ $json.query_for_specialist }}\",\n  \"query\": \"{{ $json.query_for_specialist }}\",\n  \"conversation_id\": \"{{ $json.conversation_id }}\",\n  \"history\": {{ JSON.stringify($json.history) }},\n  \"language\": \"{{ $json.language }}\",\n  \"user_id\": \"{{ $json.user_id }}\"\n}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "call-vat-specialist",
+      "name": "Call VAT Specialist",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1540, 200],
+      "notesInFlow": true,
+      "notes": "Calls VAT specialist workflow"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.N8N_BASE_URL || 'https://your-n8n-instance.app.n8n.cloud' }}/webhook/income-tax-specialist",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"message\": \"{{ $json.query_for_specialist }}\",\n  \"query\": \"{{ $json.query_for_specialist }}\",\n  \"conversation_id\": \"{{ $json.conversation_id }}\",\n  \"history\": {{ JSON.stringify($json.history) }},\n  \"language\": \"{{ $json.language }}\",\n  \"user_id\": \"{{ $json.user_id }}\"\n}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "call-income-tax-specialist",
+      "name": "Call Income Tax Specialist",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1540, 360],
+      "notesInFlow": true,
+      "notes": "Calls Income Tax specialist workflow"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate greeting response without calling specialists\nconst input = $input.first().json;\nconst message = input.message.toLowerCase();\n\nlet response;\nif (message.includes('hello') || message.includes('hi') || message.includes('hey')) {\n  response = \"Hello! I'm Kofi, your GRA tax assistant. I can help you with questions about VAT, Income Tax, and other Ghana tax matters. What would you like to know?\";\n} else if (message.includes('thank')) {\n  response = \"You're welcome! Is there anything else I can help you with regarding Ghana taxes?\";\n} else if (message.includes('bye') || message.includes('goodbye')) {\n  response = \"Goodbye! Feel free to return if you have more tax questions. Have a great day!\";\n} else {\n  response = \"Hello! I'm here to help with Ghana tax questions. What would you like to know about VAT or Income Tax?\";\n}\n\nreturn {\n  json: {\n    success: true,\n    response: {\n      text: response,\n      citations: [],\n      domain: 'greeting',\n      confidence: 1.0,\n      suggested_followups: [\n        \"What is the VAT rate in Ghana?\",\n        \"Do I need to register for VAT?\",\n        \"What are the income tax bands?\"\n      ]\n    },\n    conversation_id: input.conversation_id\n  }\n};"
+      },
+      "id": "generate-greeting",
+      "name": "Generate Greeting",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1540, 520]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Handle ambiguous or general queries with clarification request\nconst input = $input.first().json;\n\nreturn {\n  json: {\n    success: true,\n    response: {\n      text: `I'd be happy to help! To give you the most accurate answer, could you clarify if your question is about:\\n\\n• **VAT** (Value Added Tax) - rates, registration, exemptions, input credits\\n• **Income Tax** - personal tax, corporate tax, PAYE, deductions\\n\\nOr feel free to rephrase your question and I'll do my best to help!`,\n      citations: [],\n      domain: 'general',\n      confidence: input.classification.confidence,\n      suggested_followups: [\n        \"What is the VAT rate in Ghana?\",\n        \"How is income tax calculated?\",\n        \"Do I need to register for VAT?\"\n      ]\n    },\n    conversation_id: input.conversation_id\n  }\n};"
+      },
+      "id": "handle-ambiguous",
+      "name": "Handle Ambiguous",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1540, 680]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Compile final response from whichever branch was taken\nconst specialistResponse = $input.first().json;\nconst originalInput = $('Parse Classification').first().json;\n\n// If the specialist returned an error, handle gracefully\nif (!specialistResponse.success && !specialistResponse.response) {\n  return {\n    json: {\n      success: false,\n      response: {\n        text: \"I'm sorry, I couldn't process your question right now. Please try again, or contact the GRA Call Centre at 0800-900-110 for immediate assistance.\",\n        citations: [],\n        domain: originalInput.classification?.domain || 'unknown',\n        confidence: 0,\n        suggested_followups: []\n      },\n      conversation_id: originalInput.conversation_id,\n      error: specialistResponse.error || 'Specialist workflow error'\n    }\n  };\n}\n\n// Add metadata to response\nconst finalResponse = {\n  success: true,\n  response: {\n    ...specialistResponse.response,\n    domain: specialistResponse.response?.domain || originalInput.classification?.domain\n  },\n  conversation_id: originalInput.conversation_id,\n  metadata: {\n    classified_as: originalInput.classification?.domain,\n    classification_confidence: originalInput.classification?.confidence,\n    processed_at: new Date().toISOString()\n  }\n};\n\nreturn { json: finalResponse };"
+      },
+      "id": "compile-response",
+      "name": "Compile Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1760, 400]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              }
+            ]
+          }
+        }
+      },
+      "id": "respond-to-webhook",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1980, 400]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              }
+            ]
+          }
+        }
+      },
+      "id": "respond-error",
+      "name": "Respond Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1100, 160]
+    },
+    {
+      "parameters": {
+        "content": "## Chat Controller Workflow\n\nThis is the main entry point for the Ghana Tax Chatbot.\n\n### Flow:\n1. **Receive Chat Query** - Webhook at /chat-v2\n2. **Validate Input** - Check message validity\n3. **Check Validation** - Route errors vs valid\n4. **Classify Query** - GPT-4 classifies domain\n5. **Parse Classification** - Extract domain\n6. **Route by Domain** - Switch to appropriate handler\n7. **Call Specialist** - VAT or Income Tax webhook\n8. **Compile Response** - Merge and format\n9. **Respond** - Return to frontend\n\n### Domains:\n- **vat** → VAT Specialist workflow\n- **income_tax** → Income Tax Specialist workflow\n- **greeting** → Local greeting handler\n- **general** → Clarification request\n\n### Setup:\n- Update specialist URLs with your n8n instance\n- Configure OpenAI credentials\n- Optional: Add Supabase logging"
+      },
+      "id": "sticky-note",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [180, 60],
+      "parameters": {
+        "width": 350,
+        "height": 450
+      }
+    }
+  ],
+  "connections": {
+    "Receive Chat Query": {
+      "main": [
+        [
+          {
+            "node": "Validate Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Input": {
+      "main": [
+        [
+          {
+            "node": "Check Validation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Validation": {
+      "main": [
+        [
+          {
+            "node": "Return Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Classify Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Return Error Response": {
+      "main": [
+        [
+          {
+            "node": "Respond Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify Query": {
+      "main": [
+        [
+          {
+            "node": "Parse Classification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Classification": {
+      "main": [
+        [
+          {
+            "node": "Route by Domain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by Domain": {
+      "main": [
+        [
+          {
+            "node": "Call VAT Specialist",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Call Income Tax Specialist",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Generate Greeting",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Handle Ambiguous",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call VAT Specialist": {
+      "main": [
+        [
+          {
+            "node": "Compile Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Income Tax Specialist": {
+      "main": [
+        [
+          {
+            "node": "Compile Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Greeting": {
+      "main": [
+        [
+          {
+            "node": "Compile Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handle Ambiguous": {
+      "main": [
+        [
+          {
+            "node": "Compile Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compile Response": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    { "name": "Ghana" },
+    { "name": "Chatbot" },
+    { "name": "GRA" },
+    { "name": "Controller" }
+  ]
+}

@@ -1,0 +1,598 @@
+{
+  "name": "GRA Chatbot - VAT Specialist",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "vat-specialist",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "receive-query",
+      "name": "Receive Query",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [220, 300],
+      "webhookId": "vat-specialist"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract and prepare query from webhook\nconst input = $input.first().json.body;\n\nconst query = input.message || input.query || '';\nconst conversationId = input.conversation_id || 'default';\nconst language = input.language || 'en';\nconst userId = input.user_id || 'anonymous';\n\nreturn {\n  json: {\n    query,\n    conversationId,\n    language,\n    userId,\n    timestamp: new Date().toISOString(),\n    specialist: 'vat'\n  }\n};"
+      },
+      "id": "prepare-query",
+      "name": "Prepare Query",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Check if translation is needed based on language\nconst input = $input.first().json;\nconst language = input.language || 'en';\n\n// Languages that need translation (Twi, Ga, Ewe)\nconst needsTranslation = ['twi', 'ga', 'ewe'];\n\n// Pidgin is optional - GPT handles it okay, but can translate for consistency\n// Add 'pidgin' to the array if you want to translate it too\n\nreturn {\n  json: {\n    ...input,\n    needs_input_translation: needsTranslation.includes(language),\n    needs_output_translation: needsTranslation.includes(language),\n    original_language: language,\n    processing_language: 'en'\n  }\n};"
+      },
+      "id": "check-translation-needed",
+      "name": "Check Translation Needed",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, 300]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.needs_input_translation }}",
+                    "rightValue": true,
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "translate"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.needs_input_translation }}",
+                    "rightValue": false,
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "skip"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "switch-input-translation",
+      "name": "Switch Input Translation",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [880, 300]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4-turbo",
+        "options": {
+          "temperature": 0.1
+        },
+        "messages": {
+          "values": [
+            {
+              "type": "system",
+              "content": "You are a translator specializing in Ghanaian languages.\nTranslate the following text to English.\nIf the text is already in English or is a mix, extract the meaning and express it in clear English.\n\nRules:\n- Preserve the intent and meaning exactly\n- If there are names of places, people, or organizations, keep them as-is\n- If there are numbers or amounts, preserve them exactly\n- Return ONLY the English translation, no explanations\n- If you cannot translate, return the original text"
+            },
+            {
+              "type": "user",
+              "content": "=Translate this {{ $json.original_language }} text to English:\n\n{{ $json.query }}"
+            }
+          ]
+        }
+      },
+      "id": "translate-input-to-english",
+      "name": "Translate Input to English",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [1100, 200],
+      "notesInFlow": true,
+      "notes": "Translates Twi/Ga/Ewe input to English"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge translation result back with original context\nconst checkNode = $('Check Translation Needed').first().json;\nconst needsTranslation = checkNode.needs_input_translation;\n\nlet query_for_processing;\nlet original_query;\n\ntry {\n  if (needsTranslation) {\n    // Get translation result\n    const translation = $input.first().json;\n    query_for_processing = translation.message?.content || translation.content || translation.text || checkNode.query;\n    original_query = checkNode.query;\n    \n    if (!query_for_processing || query_for_processing.trim() === '') {\n      throw new Error('Empty translation result');\n    }\n  } else {\n    // No translation needed, use original\n    query_for_processing = checkNode.query;\n    original_query = checkNode.query;\n  }\n} catch (e) {\n  console.error('Translation failed:', e);\n  // Fall back to original\n  query_for_processing = checkNode.query;\n  original_query = checkNode.query;\n}\n\nreturn {\n  json: {\n    ...checkNode,\n    query: query_for_processing,  // This is now in English\n    original_query: original_query,  // Preserve original for reference\n    was_translated: needsTranslation\n  }\n};"
+      },
+      "id": "merge-translated-input",
+      "name": "Merge Translated Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1320, 300]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o-mini",
+        "options": {
+          "temperature": 0.3
+        },
+        "messages": {
+          "values": [
+            {
+              "type": "system",
+              "content": "You are a query expansion assistant for a Ghana VAT (Value Added Tax) knowledge base.\n\nGiven a user question about VAT, generate 2-3 alternative phrasings that might match relevant documents.\n\nConsider:\n- Synonyms (e.g., \"VAT\" = \"Value Added Tax\")\n- Related terms (e.g., \"registration\" = \"TIN\", \"taxpayer identification\")\n- Legal terminology (e.g., \"exempt\" = \"zero-rated\", \"not taxable\")\n- Common Ghana-specific terms\n\nReturn a JSON array of strings with the expanded queries.\nExample output: [\"original query\", \"alternative phrasing 1\", \"alternative phrasing 2\"]"
+            },
+            {
+              "type": "user",
+              "content": "=Expand this query for VAT document search:\n\n{{ $json.query }}"
+            }
+          ]
+        }
+      },
+      "id": "expand-query",
+      "name": "Expand Query",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [1540, 300],
+      "notesInFlow": true,
+      "notes": "Generates alternative query phrasings"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse expanded queries from LLM response\nconst response = $input.first().json;\nconst mergedInput = $('Merge Translated Input').first().json;\n\nlet queries = [mergedInput.query]; // Start with original\n\ntry {\n  const content = response.message?.content || response.content || response.text || '';\n  // Try to parse as JSON array\n  const parsed = JSON.parse(content);\n  if (Array.isArray(parsed)) {\n    queries = parsed;\n  }\n} catch (e) {\n  // If parsing fails, just use the original query\n  console.log('Query expansion parse failed, using original');\n}\n\n// Limit to 3 queries\nqueries = queries.slice(0, 3);\n\nreturn {\n  json: {\n    ...mergedInput,\n    expanded_queries: queries,\n    primary_query: queries[0]\n  }\n};"
+      },
+      "id": "parse-queries",
+      "name": "Parse Queries",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1760, 300]
+    },
+    {
+      "parameters": {
+        "model": "text-embedding-3-small",
+        "options": {}
+      },
+      "id": "generate-embedding",
+      "name": "Generate Embedding",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
+      "typeVersion": 1.2,
+      "position": [1980, 300],
+      "notesInFlow": true,
+      "notes": "Creates embedding for vector search"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "search-documents",
+      "name": "Search Documents",
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreSupabase",
+      "typeVersion": 1,
+      "position": [2200, 300],
+      "notesInFlow": true,
+      "notes": "Connect to Supabase with VAT documents"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format retrieved documents as context for LLM\nconst searchResults = $input.all();\nconst queryData = $('Parse Queries').first().json;\n\nlet context = '';\nlet sources = [];\n\nfor (const result of searchResults) {\n  const doc = result.json;\n  if (doc.pageContent || doc.content || doc.text) {\n    const content = doc.pageContent || doc.content || doc.text;\n    const metadata = doc.metadata || {};\n    \n    context += `---\\nSource: ${metadata.source || 'Ghana VAT Documentation'}\\n`;\n    context += `Section: ${metadata.section || 'General'}\\n`;\n    context += `Content: ${content}\\n\\n`;\n    \n    sources.push({\n      document: metadata.source || 'Ghana VAT Documentation',\n      section: metadata.section || 'General',\n      page: metadata.page || 1,\n      excerpt: content.substring(0, 200) + '...'\n    });\n  }\n}\n\nreturn {\n  json: {\n    ...queryData,\n    context: context || 'No relevant documents found.',\n    sources: sources\n  }\n};"
+      },
+      "id": "format-context",
+      "name": "Format Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2420, 300]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o",
+        "options": {
+          "temperature": 0.3
+        },
+        "messages": {
+          "values": [
+            {
+              "type": "system",
+              "content": "You are Kofi, a knowledgeable VAT specialist assistant for the Ghana Revenue Authority (GRA).\n\nCRITICAL RULES:\n1. ONLY answer using the provided context from official Ghana VAT documents.\n2. If the answer is NOT in the context, say: \"I don't have specific information about that VAT topic in my knowledge base. Please contact the GRA VAT helpline or visit gra.gov.gh for assistance.\"\n3. NEVER make up VAT rates, thresholds, or requirements.\n4. Be precise about VAT rates (currently 15% standard rate + 2.5% levies).\n5. Explain VAT concepts in simple terms.\n\nRESPONSE FORMAT:\n- Provide a clear, direct answer\n- Cite specific sections of VAT Act where applicable\n- Use examples with Ghanaian context (cedis, local businesses)\n- Keep responses concise but complete"
+            },
+            {
+              "type": "user",
+              "content": "=Context from VAT documents:\n{{ $json.context }}\n\n---\nUser Question: {{ $json.query }}"
+            }
+          ]
+        }
+      },
+      "id": "generate-answer",
+      "name": "Generate Answer",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [2640, 300],
+      "notesInFlow": true,
+      "notes": "Generates answer using context"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare answer for output translation check\nconst answer = $input.first().json;\nconst contextData = $('Format Context').first().json;\n\nconst answerText = answer.message?.content || answer.content || answer.text || '';\n\nreturn {\n  json: {\n    ...contextData,\n    answer_text: answerText,\n    english_answer: answerText  // Keep English version for reference\n  }\n};"
+      },
+      "id": "prepare-answer",
+      "name": "Prepare Answer",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2860, 300]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.needs_output_translation }}",
+                    "rightValue": true,
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "translate"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.needs_output_translation }}",
+                    "rightValue": false,
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "skip"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "switch-output-translation",
+      "name": "Switch Output Translation",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [3080, 300]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4-turbo",
+        "options": {
+          "temperature": 0.3
+        },
+        "messages": {
+          "values": [
+            {
+              "type": "system",
+              "content": "You are a translator specializing in Ghanaian languages.\nTranslate the following English text to the target language.\n\nRules:\n- Preserve the meaning and helpful tone\n- Keep technical tax terms in English if there's no good equivalent (e.g., \"VAT\", \"TIN\", \"PAYE\")\n- Keep section numbers and legal references in English (e.g., \"Section 15(1)(a)\")\n- Keep currency amounts in original format (e.g., \"GH₵500\")\n- Make the translation natural and conversational\n- Return ONLY the translation, no explanations\n\nLanguage-specific guidance:\n- Twi: Use common Akan expressions, formal but friendly\n- Ga: Use standard Ga, formal but accessible\n- Ewe: Use standard Ewe, formal but accessible"
+            },
+            {
+              "type": "user",
+              "content": "=Translate this text to {{ $json.original_language }}:\n\n{{ $json.answer_text }}"
+            }
+          ]
+        }
+      },
+      "id": "translate-response-to-target",
+      "name": "Translate Response to Target",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [3300, 200],
+      "notesInFlow": true,
+      "notes": "Translates English response to Twi/Ga/Ewe"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge translated response with context\nconst preparedAnswer = $('Prepare Answer').first().json;\nconst needsTranslation = preparedAnswer.needs_output_translation;\n\nlet final_response_text;\nlet english_response_text;\n\ntry {\n  if (needsTranslation) {\n    const translation = $input.first().json;\n    final_response_text = translation.message?.content || translation.content || translation.text;\n    english_response_text = preparedAnswer.answer_text;  // Keep English for citations\n    \n    if (!final_response_text || final_response_text.trim() === '') {\n      throw new Error('Empty translation result');\n    }\n  } else {\n    final_response_text = preparedAnswer.answer_text;\n    english_response_text = preparedAnswer.answer_text;\n  }\n} catch (e) {\n  console.error('Output translation failed:', e);\n  // Fall back to English\n  final_response_text = preparedAnswer.answer_text;\n  english_response_text = preparedAnswer.answer_text;\n}\n\n// Log translation event for debugging\nconsole.log('Translation event:', {\n  from: preparedAnswer.processing_language,\n  to: preparedAnswer.original_language,\n  input_translated: preparedAnswer.was_translated,\n  output_translated: needsTranslation,\n  original_query: preparedAnswer.original_query?.substring(0, 50),\n  english_query: preparedAnswer.query?.substring(0, 50)\n});\n\nreturn {\n  json: {\n    ...preparedAnswer,\n    response_text: final_response_text,\n    english_response_text: english_response_text,\n    response_language: preparedAnswer.original_language,\n    was_response_translated: needsTranslation\n  }\n};"
+      },
+      "id": "merge-translated-response",
+      "name": "Merge Translated Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3520, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format final response with citations\nconst data = $input.first().json;\n\n// Build citations array (keep in English for verifiability)\nconst citations = data.sources || [];\n\nreturn {\n  json: {\n    success: true,\n    response: {\n      text: data.response_text,  // In user's language (Twi, Ga, etc.)\n      citations: citations.map(c => ({\n        document: c.document,  // English\n        section: c.section,    // English\n        excerpt: c.excerpt,    // English (from source docs)\n        page: c.page\n      })),\n      confidence: citations.length > 0 ? 0.9 : 0.5,\n      language: data.response_language,\n      was_translated: data.was_response_translated,\n      suggested_followups: [\n        'What is the VAT registration threshold?',\n        'How do I file VAT returns?',\n        'What items are VAT exempt?'\n      ]\n    },\n    conversation_id: data.conversationId,\n    specialist: 'vat',\n    debug: {\n      original_language: data.original_language,\n      was_input_translated: data.was_translated,\n      was_output_translated: data.was_response_translated,\n      original_query: data.original_query,\n      english_query: data.query\n    }\n  }\n};"
+      },
+      "id": "format-response",
+      "name": "Format Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3740, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              }
+            ]
+          }
+        }
+      },
+      "id": "respond-to-webhook",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [3960, 300]
+    },
+    {
+      "parameters": {
+        "content": "## VAT Specialist Workflow v2 (with Translation)\n\nThis workflow handles VAT-specific queries with translation support:\n\n### Input Translation (Twi/Ga/Ewe to English)\n1. **Receive Query** - Webhook receives question\n2. **Prepare Query** - Extracts message and language\n3. **Check Translation Needed** - Determines if translation required\n4. **Switch Input Translation** - Routes based on language\n5. **Translate Input** - Translates to English (if needed)\n6. **Merge Translated Input** - Combines results\n\n### RAG Processing (in English)\n7. **Expand Query** - Generates alternative phrasings\n8. **Parse Queries** - Processes expanded queries\n9. **Generate Embedding** - Creates vector embedding\n10. **Search Documents** - Finds relevant VAT docs\n11. **Format Context** - Prepares context for LLM\n12. **Generate Answer** - Creates response\n\n### Output Translation (English to Target Language)\n13. **Prepare Answer** - Prepares for translation check\n14. **Switch Output Translation** - Routes based on language\n15. **Translate Response** - Translates to Twi/Ga/Ewe\n16. **Merge Translated Response** - Combines results\n17. **Format Response** - Adds citations (in English)\n18. **Respond** - Returns to frontend\n\n### Notes:\n- Citations remain in English for verifiability\n- VAT/TIN/legal terms kept in English\n- Supports: English, Pidgin, Twi, Ga, Ewe"
+      },
+      "id": "sticky-note",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [180, 60],
+      "parameters": {
+        "width": 400,
+        "height": 600
+      }
+    }
+  ],
+  "connections": {
+    "Receive Query": {
+      "main": [
+        [
+          {
+            "node": "Prepare Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Query": {
+      "main": [
+        [
+          {
+            "node": "Check Translation Needed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Translation Needed": {
+      "main": [
+        [
+          {
+            "node": "Switch Input Translation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch Input Translation": {
+      "main": [
+        [
+          {
+            "node": "Translate Input to English",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Merge Translated Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Translate Input to English": {
+      "main": [
+        [
+          {
+            "node": "Merge Translated Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Translated Input": {
+      "main": [
+        [
+          {
+            "node": "Expand Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Expand Query": {
+      "main": [
+        [
+          {
+            "node": "Parse Queries",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Queries": {
+      "main": [
+        [
+          {
+            "node": "Generate Embedding",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Embedding": {
+      "main": [
+        [
+          {
+            "node": "Search Documents",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Documents": {
+      "main": [
+        [
+          {
+            "node": "Format Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Context": {
+      "main": [
+        [
+          {
+            "node": "Generate Answer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Answer": {
+      "main": [
+        [
+          {
+            "node": "Prepare Answer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Answer": {
+      "main": [
+        [
+          {
+            "node": "Switch Output Translation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch Output Translation": {
+      "main": [
+        [
+          {
+            "node": "Translate Response to Target",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Merge Translated Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Translate Response to Target": {
+      "main": [
+        [
+          {
+            "node": "Merge Translated Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Translated Response": {
+      "main": [
+        [
+          {
+            "node": "Format Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Response": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    { "name": "Ghana" },
+    { "name": "Chatbot" },
+    { "name": "GRA" },
+    { "name": "VAT" },
+    { "name": "Translation" }
+  ]
+}

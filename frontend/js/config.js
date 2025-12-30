@@ -4,7 +4,7 @@
 
 const CONFIG = {
   // n8n webhook base URL (user will replace this)
-  N8N_WEBHOOK_URL: 'https://zonecrest.app.n8n.cloud/webhook-test',
+  N8N_WEBHOOK_URL: 'https://zonecrest.app.n8n.cloud/webhook',
 
   // Demo mode - uses local simulation when n8n is not configured
   DEMO_MODE: false,
@@ -79,7 +79,7 @@ const CONFIG = {
 
   // Check if n8n is configured
   isN8nConfigured() {
-    return !this.N8N_WEBHOOK_URL.includes('YOUR-N8N-INSTANCE');
+    return !this.N8N_WEBHOOK_URL.includes('https://zonecrest.app.n8n.cloud/webhook');
   },
 
   // Get full endpoint URL

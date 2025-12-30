@@ -48,9 +48,10 @@ const Chat = {
 
     if (!conversation) {
       conversation = Storage.createConversation();
-      // Add greeting
+      // Add greeting based on current language
+      const greeting = typeof Language !== 'undefined' ? Language.getGreeting() : CONFIG.BOT_GREETING;
       this.addBotMessage({
-        text: CONFIG.BOT_GREETING,
+        text: greeting,
         citations: [],
         suggested_followups: CONFIG.SUGGESTED_QUESTIONS
       });
@@ -96,7 +97,7 @@ const Chat = {
     try {
       // Get response from API
       const conversationId = Storage.getCurrentConversationId();
-      const language = Storage.getLanguage();
+      const language = typeof Language !== 'undefined' ? Language.getLanguage() : Storage.getLanguage();
       const response = await API.sendMessage(message, conversationId, language);
 
       // Hide typing
@@ -322,8 +323,9 @@ const Chat = {
     if (confirm('Start a new conversation? Your current chat will be saved.')) {
       Storage.createConversation();
       this.messagesContainer.innerHTML = '';
+      const greeting = typeof Language !== 'undefined' ? Language.getGreeting() : CONFIG.BOT_GREETING;
       this.addBotMessage({
-        text: CONFIG.BOT_GREETING,
+        text: greeting,
         citations: [],
         suggested_followups: CONFIG.SUGGESTED_QUESTIONS
       });

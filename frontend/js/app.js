@@ -9,11 +9,21 @@ const App = {
    * Initialize the application
    */
   init() {
-    // Load saved language
-    this.currentLanguage = Storage.getLanguage();
+    // Initialize language module
+    if (typeof Language !== 'undefined') {
+      Language.init();
+      this.currentLanguage = Language.getLanguage();
+
+      // Listen for language changes
+      window.addEventListener('languageChanged', (e) => {
+        this.currentLanguage = e.detail.language;
+        this.showToast(`Language: ${e.detail.config.name}`);
+      });
+    } else {
+      this.currentLanguage = Storage.getLanguage();
+    }
 
     // Initialize UI
-    this._initLanguageSelector();
     this._initOfflineDetection();
     this._initPageSpecific();
 
@@ -47,37 +57,6 @@ const App = {
         this.showToast(message);
       };
     }
-  },
-
-  /**
-   * Initialize language selector
-   */
-  _initLanguageSelector() {
-    const buttons = document.querySelectorAll('.lang-btn');
-
-    buttons.forEach(btn => {
-      // Set initial active state
-      if (btn.dataset.lang === this.currentLanguage) {
-        btn.classList.add('active');
-      }
-
-      btn.addEventListener('click', () => {
-        // Update UI
-        buttons.forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-
-        // Save language
-        this.currentLanguage = btn.dataset.lang;
-        Storage.setLanguage(this.currentLanguage);
-
-        // Dispatch event for voice module
-        window.dispatchEvent(new CustomEvent('languageChanged', {
-          detail: { language: this.currentLanguage }
-        }));
-
-        this.showToast(`Language changed to ${CONFIG.LANGUAGES[this.currentLanguage]}`);
-      });
-    });
   },
 
   /**

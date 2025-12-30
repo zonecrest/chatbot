@@ -16,11 +16,46 @@ const CONFIG = {
 
   // Supported languages
   LANGUAGES: {
-    'en': 'English',
-    'pidgin': 'Pidgin',
-    'twi': 'Twi',
-    'ga': 'Ga',
-    'ewe': 'Ewe'
+    'en': {
+      code: 'en',
+      name: 'English',
+      nativeName: 'English',
+      flag: '🇬🇧',
+      voiceSupported: true,
+      greeting: "Hello! I'm Kofi, your GRA tax assistant. How can I help you today?"
+    },
+    'pidgin': {
+      code: 'pidgin',
+      name: 'Pidgin',
+      nativeName: 'Pidgin',
+      flag: '🇬🇭',
+      voiceSupported: true,
+      greeting: "Chale! I be Kofi, your GRA tax assistant. How I fit help you today?"
+    },
+    'twi': {
+      code: 'twi',
+      name: 'Twi',
+      nativeName: 'Twi',
+      flag: '🇬🇭',
+      voiceSupported: false,
+      greeting: "Akwaaba! Me din de Kofi, wo GRA tax assistant. Ɛdeɛn na metumi de aboa wo ɛnnɛ?"
+    },
+    'ga': {
+      code: 'ga',
+      name: 'Ga',
+      nativeName: 'Ga',
+      flag: '🇬🇭',
+      voiceSupported: false,
+      greeting: "Ojekoo! Mi ŋmɛlɛ Kofi, wo GRA tax assistant. Nyɛ lɛ mi ko bo wo enyɛ?"
+    },
+    'ewe': {
+      code: 'ewe',
+      name: 'Ewe',
+      nativeName: 'Eʋe',
+      flag: '🇬🇭',
+      voiceSupported: false,
+      greeting: "Woezɔ! Nye ŋkɔe nye Kofi, wò GRA tax assistant. Aleke makpe ɖe ŋuwò egbea?"
+    }
   },
 
   // Default language
@@ -116,6 +151,7 @@ const CONFIG = {
 // Freeze config
 Object.freeze(CONFIG);
 Object.freeze(CONFIG.LANGUAGES);
+Object.keys(CONFIG.LANGUAGES).forEach(key => Object.freeze(CONFIG.LANGUAGES[key]));
 Object.freeze(CONFIG.ENDPOINTS);
 Object.freeze(CONFIG.STORAGE_KEYS);
 Object.freeze(CONFIG.VOICE);

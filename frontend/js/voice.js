@@ -137,8 +137,10 @@ const Voice = {
     // Check if current language supports STT
     const currentLang = typeof Language !== 'undefined' ? Language.getLanguage() : Storage.getLanguage();
     if (!CONFIG.VOICE.STT_SUPPORTED.includes(currentLang)) {
+      const langConfig = CONFIG.LANGUAGES[currentLang];
+      const langName = langConfig?.name || currentLang;
       if (this.onError) {
-        this.onError(`Voice input not available for ${CONFIG.LANGUAGES[currentLang]?.name || CONFIG.LANGUAGES[currentLang] || currentLang}. Try English or Pidgin.`);
+        this.onError(`Voice input not available for ${langName}. Try English or Pidgin.`);
       }
       return false;
     }
@@ -353,7 +355,9 @@ const Voice = {
       micBtn.classList.toggle('disabled', !sttAvailable);
 
       if (!sttAvailable) {
-        micBtn.setAttribute('title', `Voice input not available for ${CONFIG.LANGUAGES[currentLang] || currentLang}. Try English or Pidgin.`);
+        const langConfig = CONFIG.LANGUAGES[currentLang];
+        const langName = langConfig?.name || currentLang;
+        micBtn.setAttribute('title', `Voice input not available for ${langName}. Try English or Pidgin.`);
       } else {
         micBtn.setAttribute('title', 'Voice input');
       }

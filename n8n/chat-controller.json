@@ -1,11 +1,11 @@
 {
-  "name": "GRA Chatbot - Chat Controller",
+  "name": "chat-controller",
   "nodes": [
     {
       "parameters": {
         "httpMethod": "POST",
-        "path": "chat-v2",
-        "responseMode": "responseNode",
+        "path": "chat",
+        "responseMode": "lastNode",
         "options": {
           "allowedOrigins": "*"
         }
@@ -14,18 +14,28 @@
       "name": "Receive Chat Query",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [220, 300],
-      "webhookId": "chat-v2"
+      "position": [220, 400],
+      "webhookId": "chat"
     },
     {
       "parameters": {
-        "jsCode": "// Validate and prepare input from webhook\nconst input = $input.first().json.body;\n\n// Validate required fields\nif (!input.message || typeof input.message !== 'string') {\n  return {\n    json: {\n      error: true,\n      message: 'Missing or invalid message field'\n    }\n  };\n}\n\n// Clean and prepare input\nconst cleanedMessage = input.message.trim();\nif (cleanedMessage.length < 2) {\n  return {\n    json: {\n      error: true,\n      message: 'Message too short'\n    }\n  };\n}\n\n// Generate conversation ID if not provided\nconst conversationId = input.conversation_id || `conv_${Date.now()}`;\n\nreturn {\n  json: {\n    message: cleanedMessage,\n    conversation_id: conversationId,\n    language: input.language || 'en',\n    user_id: input.user_id || 'anonymous',\n    history: input.history || [],\n    timestamp: new Date().toISOString()\n  }\n};"
+        "jsCode": "const input = $input.first().json.body || $input.first().json;\n\nif (!input.message || typeof input.message !== 'string') {\n  return {\n    json: {\n      error: true,\n      message: 'Missing or invalid message field'\n    }\n  };\n}\n\nconst cleanedMessage = input.message.trim();\nif (cleanedMessage.length < 2) {\n  return {\n    json: {\n      error: true,\n      message: 'Message too short'\n    }\n  };\n}\n\nconst conversationId = input.conversation_id || `conv_${Date.now()}`;\nconst language = input.language || 'en';\n\nreturn {\n  json: {\n    message: cleanedMessage,\n    original_message: cleanedMessage,\n    conversation_id: conversationId,\n    language: language,\n    user_id: input.user_id || 'anonymous',\n    history: input.history || [],\n    timestamp: new Date().toISOString()\n  }\n};"
       },
       "id": "validate-input",
       "name": "Validate Input",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [440, 300]
+      "position": [440, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nconst language = input.language;\n\n// Languages that need translation to English\nconst needsTranslation = ['twi', 'ga', 'ewe'];\n\n// Pidgin is close enough to English - GPT handles it\nconst translateInput = needsTranslation.includes(language);\n\nreturn {\n  json: {\n    ...input,\n    needs_input_translation: translateInput,\n    needs_output_translation: translateInput,\n    processing_language: 'en'\n  }\n};"
+      },
+      "id": "check-input-translation",
+      "name": "Check Input Translation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, 400]
     },
     {
       "parameters": {
@@ -40,7 +50,7 @@
                 },
                 "conditions": [
                   {
-                    "leftValue": "={{ $json.error }}",
+                    "leftValue": "={{ $json.needs_input_translation }}",
                     "rightValue": true,
                     "operator": {
                       "type": "boolean",
@@ -51,7 +61,7 @@
                 "combinator": "and"
               },
               "renameOutput": true,
-              "outputKey": "error"
+              "outputKey": "translate"
             },
             {
               "conditions": {
@@ -62,38 +72,28 @@
                 },
                 "conditions": [
                   {
-                    "leftValue": "={{ $json.error }}",
-                    "rightValue": true,
+                    "leftValue": "={{ $json.needs_input_translation }}",
+                    "rightValue": false,
                     "operator": {
                       "type": "boolean",
-                      "operation": "notEquals"
+                      "operation": "equals"
                     }
                   }
                 ],
                 "combinator": "and"
               },
               "renameOutput": true,
-              "outputKey": "valid"
+              "outputKey": "skip"
             }
           ]
         },
         "options": {}
       },
-      "id": "check-validation",
-      "name": "Check Validation",
+      "id": "route-input-translation",
+      "name": "Route Input Translation",
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.2,
-      "position": [660, 300]
-    },
-    {
-      "parameters": {
-        "jsCode": "// Return error response for invalid input\nconst input = $input.first().json;\n\nreturn {\n  json: {\n    success: false,\n    response: {\n      text: input.message || 'Invalid request. Please provide a valid message.',\n      citations: [],\n      domain: 'error',\n      confidence: 0,\n      suggested_followups: []\n    },\n    conversation_id: null,\n    error: input.message\n  }\n};"
-      },
-      "id": "return-error-response",
-      "name": "Return Error Response",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [880, 160]
+      "position": [880, 400]
     },
     {
       "parameters": {
@@ -105,32 +105,69 @@
           "values": [
             {
               "type": "system",
-              "content": "You are a query classifier for the Ghana Revenue Authority chatbot.\nClassify user queries into tax domains.\nReturn ONLY valid JSON.\n\nAvailable domains:\n- \"vat\" - Value Added Tax questions (rates, registration, exemptions, zero-rating, input credits)\n- \"income_tax\" - Income Tax questions (personal tax, corporate tax, PAYE, tax bands, deductions)\n- \"general\" - General questions that don't fit a specific domain OR need clarification\n- \"greeting\" - Greetings, thanks, goodbyes (not tax questions)"
+              "content": "You are a translator specializing in Ghanaian languages.\nTranslate the following text to English.\nIf the text is already in English or is a mix, extract the meaning and express it in clear English.\n\nRules:\n- Preserve the intent and meaning exactly\n- Keep names, places, and organizations as-is\n- Keep numbers and amounts exactly as stated\n- Return ONLY the English translation, no explanations\n- If you cannot translate, return the original text"
             },
             {
               "type": "user",
-              "content": "=Classify this query:\n\nUser message: {{ $json.message }}\n\nRecent conversation context:\n{{ JSON.stringify($json.history.slice(-4)) }}\n\nReturn JSON:\n{\n  \"domain\": \"vat\" | \"income_tax\" | \"general\" | \"greeting\",\n  \"confidence\": 0.0-1.0,\n  \"reasoning\": \"Brief explanation of classification\",\n  \"reformulated_query\": \"The query rewritten as a clear tax question (or null for greetings)\"\n}"
+              "content": "=Translate this {{ $json.language }} text to English:\n\n{{ $json.message }}"
             }
           ]
         }
       },
-      "id": "classify-query",
-      "name": "Classify Query",
+      "id": "translate-input-to-english",
+      "name": "Translate Input to English",
       "type": "@n8n/n8n-nodes-langchain.openAi",
       "typeVersion": 1.8,
-      "position": [880, 400],
+      "position": [1100, 280],
       "notesInFlow": true,
-      "notes": "Uses GPT-4 to classify query domain"
+      "notes": "Translates Twi/Ga/Ewe input to English"
     },
     {
       "parameters": {
-        "jsCode": "// Parse classification result from OpenAI\nconst input = $('Validate Input').first().json;\nconst response = $input.first().json;\n\nlet classification;\ntry {\n  let content = response.message?.content || response.content;\n  if (typeof content === 'string') {\n    content = content.replace(/```json\\n?/g, '').replace(/```\\n?/g, '');\n    classification = JSON.parse(content);\n  } else {\n    classification = content;\n  }\n} catch (e) {\n  // Default to general if parsing fails\n  classification = {\n    domain: 'general',\n    confidence: 0.5,\n    reasoning: 'Failed to parse classification',\n    reformulated_query: input.message\n  };\n}\n\nreturn {\n  json: {\n    ...input,\n    classification: classification,\n    query_for_specialist: classification.reformulated_query || input.message\n  }\n};"
+        "jsCode": "const original = $('Check Input Translation').first().json;\nconst needsTranslation = original.needs_input_translation;\n\nlet messageForProcessing;\n\nif (needsTranslation) {\n  const translation = $input.first().json;\n  const translatedText = translation.message?.content || translation.content || translation.text;\n  messageForProcessing = translatedText?.trim() || original.message;\n} else {\n  messageForProcessing = original.message;\n}\n\nreturn {\n  json: {\n    ...original,\n    message: messageForProcessing,\n    message_english: messageForProcessing,\n    was_input_translated: needsTranslation\n  }\n};"
+      },
+      "id": "merge-translated-input",
+      "name": "Merge Translated Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1320, 400]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4-turbo",
+        "options": {
+          "temperature": 0.1
+        },
+        "messages": {
+          "values": [
+            {
+              "type": "system",
+              "content": "You are a query classifier for the Ghana Revenue Authority chatbot.\nClassify user queries into tax domains.\nReturn ONLY valid JSON.\n\nAvailable domains:\n- \"vat\" - Value Added Tax (rates, registration, exemptions, zero-rating, input credits)\n- \"income_tax\" - Income Tax (personal tax, corporate tax, PAYE, tax bands, deductions)\n- \"general\" - Unclear or needs clarification\n- \"greeting\" - Greetings, thanks, goodbyes"
+            },
+            {
+              "type": "user",
+              "content": "=Classify this query:\n\n\"{{ $json.message }}\"\n\nReturn JSON:\n{\n  \"domain\": \"vat\" | \"income_tax\" | \"general\" | \"greeting\",\n  \"confidence\": 0.0-1.0,\n  \"reasoning\": \"Brief explanation\"\n}"
+            }
+          ]
+        }
+      },
+      "id": "classify-domain",
+      "name": "Classify Domain",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [1540, 400],
+      "notesInFlow": true,
+      "notes": "GPT-4 classifies query domain"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $('Merge Translated Input').first().json;\nconst response = $input.first().json;\n\nlet classification;\ntry {\n  let content = response.message?.content || response.content || response.text;\n  if (typeof content === 'string') {\n    content = content.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();\n    classification = JSON.parse(content);\n  } else {\n    classification = content;\n  }\n} catch (e) {\n  classification = {\n    domain: 'general',\n    confidence: 0.5,\n    reasoning: 'Failed to parse classification'\n  };\n}\n\nreturn {\n  json: {\n    ...input,\n    classification: classification\n  }\n};"
       },
       "id": "parse-classification",
       "name": "Parse Classification",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1100, 400]
+      "position": [1760, 400]
     },
     {
       "parameters": {
@@ -201,28 +238,6 @@
               },
               "renameOutput": true,
               "outputKey": "greeting"
-            },
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true,
-                  "leftValue": "",
-                  "typeValidation": "strict"
-                },
-                "conditions": [
-                  {
-                    "leftValue": "={{ $json.classification.domain }}",
-                    "rightValue": "general",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals"
-                    }
-                  }
-                ],
-                "combinator": "and"
-              },
-              "renameOutput": true,
-              "outputKey": "general"
             }
           ]
         },
@@ -234,15 +249,15 @@
       "name": "Route by Domain",
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.2,
-      "position": [1320, 400]
+      "position": [1980, 400]
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ $env.N8N_BASE_URL || 'https://your-n8n-instance.app.n8n.cloud' }}/webhook/vat-specialist",
+        "url": "={{ $env.N8N_WEBHOOK_BASE_URL || 'https://your-n8n-instance.app.n8n.cloud/webhook' }}/vat-specialist",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"message\": \"{{ $json.query_for_specialist }}\",\n  \"query\": \"{{ $json.query_for_specialist }}\",\n  \"conversation_id\": \"{{ $json.conversation_id }}\",\n  \"history\": {{ JSON.stringify($json.history) }},\n  \"language\": \"{{ $json.language }}\",\n  \"user_id\": \"{{ $json.user_id }}\"\n}",
+        "jsonBody": "={\n  \"query\": \"{{ $json.message }}\",\n  \"conversation_id\": \"{{ $json.conversation_id }}\",\n  \"history\": {{ JSON.stringify($json.history) }}\n}",
         "options": {
           "timeout": 60000
         }
@@ -251,17 +266,17 @@
       "name": "Call VAT Specialist",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1540, 200],
+      "position": [2200, 180],
       "notesInFlow": true,
-      "notes": "Calls VAT specialist workflow"
+      "notes": "Sends English query to VAT specialist"
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ $env.N8N_BASE_URL || 'https://your-n8n-instance.app.n8n.cloud' }}/webhook/income-tax-specialist",
+        "url": "={{ $env.N8N_WEBHOOK_BASE_URL || 'https://your-n8n-instance.app.n8n.cloud/webhook' }}/income-tax-specialist",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"message\": \"{{ $json.query_for_specialist }}\",\n  \"query\": \"{{ $json.query_for_specialist }}\",\n  \"conversation_id\": \"{{ $json.conversation_id }}\",\n  \"history\": {{ JSON.stringify($json.history) }},\n  \"language\": \"{{ $json.language }}\",\n  \"user_id\": \"{{ $json.user_id }}\"\n}",
+        "jsonBody": "={\n  \"query\": \"{{ $json.message }}\",\n  \"conversation_id\": \"{{ $json.conversation_id }}\",\n  \"history\": {{ JSON.stringify($json.history) }}\n}",
         "options": {
           "timeout": 60000
         }
@@ -270,95 +285,174 @@
       "name": "Call Income Tax Specialist",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1540, 360],
+      "position": [2200, 340],
       "notesInFlow": true,
-      "notes": "Calls Income Tax specialist workflow"
+      "notes": "Sends English query to Income Tax specialist"
     },
     {
       "parameters": {
-        "jsCode": "// Generate greeting response without calling specialists\nconst input = $input.first().json;\nconst message = input.message.toLowerCase();\n\nlet response;\nif (message.includes('hello') || message.includes('hi') || message.includes('hey')) {\n  response = \"Hello! I'm Kofi, your GRA tax assistant. I can help you with questions about VAT, Income Tax, and other Ghana tax matters. What would you like to know?\";\n} else if (message.includes('thank')) {\n  response = \"You're welcome! Is there anything else I can help you with regarding Ghana taxes?\";\n} else if (message.includes('bye') || message.includes('goodbye')) {\n  response = \"Goodbye! Feel free to return if you have more tax questions. Have a great day!\";\n} else {\n  response = \"Hello! I'm here to help with Ghana tax questions. What would you like to know about VAT or Income Tax?\";\n}\n\nreturn {\n  json: {\n    success: true,\n    response: {\n      text: response,\n      citations: [],\n      domain: 'greeting',\n      confidence: 1.0,\n      suggested_followups: [\n        \"What is the VAT rate in Ghana?\",\n        \"Do I need to register for VAT?\",\n        \"What are the income tax bands?\"\n      ]\n    },\n    conversation_id: input.conversation_id\n  }\n};"
+        "jsCode": "const input = $input.first().json;\nconst language = input.language;\n\nconst greetings = {\n  'en': \"Hello! I'm Kofi, your GRA tax assistant. How can I help you with VAT or Income Tax today?\",\n  'pidgin': \"Chale! I be Kofi, your GRA tax assistant. Wetin I fit help you with?\",\n  'twi': \"Akwaaba! Me din de Kofi, wo GRA tax assistant. Ɛdeɛn na metumi aboa wo?\",\n  'ga': \"Ojekoo! Mi ŋmɛlɛ Kofi, wo GRA tax assistant.\",\n  'ewe': \"Woezɔ! Nye ŋkɔe nye Kofi, wò GRA tax assistant.\"\n};\n\nconst response = greetings[language] || greetings['en'];\n\nreturn {\n  json: {\n    success: true,\n    response: {\n      text: response,\n      citations: [],\n      domain: 'greeting',\n      confidence: 1.0\n    },\n    skip_output_translation: true\n  }\n};"
       },
       "id": "generate-greeting",
       "name": "Generate Greeting",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1540, 520]
+      "position": [2200, 500]
     },
     {
       "parameters": {
-        "jsCode": "// Handle ambiguous or general queries with clarification request\nconst input = $input.first().json;\n\nreturn {\n  json: {\n    success: true,\n    response: {\n      text: `I'd be happy to help! To give you the most accurate answer, could you clarify if your question is about:\\n\\n• **VAT** (Value Added Tax) - rates, registration, exemptions, input credits\\n• **Income Tax** - personal tax, corporate tax, PAYE, deductions\\n\\nOr feel free to rephrase your question and I'll do my best to help!`,\n      citations: [],\n      domain: 'general',\n      confidence: input.classification.confidence,\n      suggested_followups: [\n        \"What is the VAT rate in Ghana?\",\n        \"How is income tax calculated?\",\n        \"Do I need to register for VAT?\"\n      ]\n    },\n    conversation_id: input.conversation_id\n  }\n};"
+        "jsCode": "const input = $input.first().json;\n\nconst clarification = `I'd be happy to help! Could you clarify if your question is about:\n\n• **VAT** (Value Added Tax) - rates, registration, exemptions\n• **Income Tax** - personal tax, corporate tax, PAYE, deductions\n\nOr feel free to rephrase your question!`;\n\nreturn {\n  json: {\n    success: true,\n    response: {\n      text: clarification,\n      citations: [],\n      domain: 'general',\n      confidence: input.classification?.confidence || 0.5\n    },\n    skip_output_translation: false\n  }\n};"
       },
       "id": "handle-ambiguous",
       "name": "Handle Ambiguous",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1540, 680]
+      "position": [2200, 660]
     },
     {
       "parameters": {
-        "jsCode": "// Compile final response from whichever branch was taken\nconst specialistResponse = $input.first().json;\nconst originalInput = $('Parse Classification').first().json;\n\n// If the specialist returned an error, handle gracefully\nif (!specialistResponse.success && !specialistResponse.response) {\n  return {\n    json: {\n      success: false,\n      response: {\n        text: \"I'm sorry, I couldn't process your question right now. Please try again, or contact the GRA Call Centre at 0800-900-110 for immediate assistance.\",\n        citations: [],\n        domain: originalInput.classification?.domain || 'unknown',\n        confidence: 0,\n        suggested_followups: []\n      },\n      conversation_id: originalInput.conversation_id,\n      error: specialistResponse.error || 'Specialist workflow error'\n    }\n  };\n}\n\n// Add metadata to response\nconst finalResponse = {\n  success: true,\n  response: {\n    ...specialistResponse.response,\n    domain: specialistResponse.response?.domain || originalInput.classification?.domain\n  },\n  conversation_id: originalInput.conversation_id,\n  metadata: {\n    classified_as: originalInput.classification?.domain,\n    classification_confidence: originalInput.classification?.confidence,\n    processed_at: new Date().toISOString()\n  }\n};\n\nreturn { json: finalResponse };"
+        "jsCode": "const context = $('Parse Classification').first().json;\nconst specialistResponse = $input.first().json;\n\n// Check if we should skip translation (greetings already localized)\nconst skipTranslation = specialistResponse.skip_output_translation || false;\n\n// Get the response text\nlet responseText;\nif (specialistResponse.response?.text) {\n  responseText = specialistResponse.response.text;\n} else if (specialistResponse.text) {\n  responseText = specialistResponse.text;\n} else {\n  responseText = \"I'm sorry, I couldn't process your question.\";\n}\n\nreturn {\n  json: {\n    ...context,\n    specialist_response: specialistResponse,\n    response_text_english: responseText,\n    citations: specialistResponse.response?.citations || [],\n    domain: specialistResponse.response?.domain || context.classification?.domain,\n    needs_output_translation: context.needs_output_translation && !skipTranslation\n  }\n};"
+      },
+      "id": "prepare-output-translation",
+      "name": "Prepare Output Translation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2420, 400]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.needs_output_translation }}",
+                    "rightValue": true,
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "translate"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.needs_output_translation }}",
+                    "rightValue": false,
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "skip"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "route-output-translation",
+      "name": "Route Output Translation",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [2640, 400]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4-turbo",
+        "options": {
+          "temperature": 0.3
+        },
+        "messages": {
+          "values": [
+            {
+              "type": "system",
+              "content": "=You are a translator specializing in Ghanaian languages.\nTranslate the following English text to {{ $json.language }}.\n\nRules:\n- Preserve the meaning and helpful tone\n- Keep technical tax terms in English (VAT, TIN, PAYE, GRA)\n- Keep section numbers in English (Section 15(1)(a))\n- Keep currency amounts as-is (GH₵500)\n- Make the translation natural and conversational\n- Return ONLY the translation, no explanations\n\nLanguage guidance:\n- twi: Use common Akan expressions, formal but friendly\n- ga: Use standard Ga, formal but accessible\n- ewe: Use standard Ewe, formal but accessible"
+            },
+            {
+              "type": "user",
+              "content": "=Translate to {{ $json.language }}:\n\n{{ $json.response_text_english }}"
+            }
+          ]
+        }
+      },
+      "id": "translate-response",
+      "name": "Translate Response",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [2860, 280],
+      "notesInFlow": true,
+      "notes": "Translates English response to Twi/Ga/Ewe"
+    },
+    {
+      "parameters": {
+        "jsCode": "const context = $('Prepare Output Translation').first().json;\nconst needsTranslation = context.needs_output_translation;\n\nlet finalText;\nif (needsTranslation) {\n  const translation = $input.first().json;\n  finalText = translation.message?.content || translation.content || translation.text || context.response_text_english;\n} else {\n  finalText = context.response_text_english;\n}\n\nreturn {\n  json: {\n    success: true,\n    response: {\n      text: finalText.trim(),\n      text_english: context.response_text_english,\n      citations: context.citations,\n      domain: context.domain,\n      language: context.language,\n      was_translated: context.was_input_translated || needsTranslation,\n      suggested_followups: context.specialist_response?.response?.suggested_followups || []\n    },\n    conversation_id: context.conversation_id,\n    metadata: {\n      classified_as: context.classification?.domain,\n      classification_confidence: context.classification?.confidence,\n      input_translated: context.was_input_translated,\n      output_translated: needsTranslation,\n      processed_at: new Date().toISOString()\n    }\n  }\n};"
       },
       "id": "compile-response",
       "name": "Compile Response",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1760, 400]
+      "position": [3080, 400]
     },
     {
       "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{ $json }}",
-        "options": {
-          "responseHeaders": {
-            "entries": [
-              {
-                "name": "Access-Control-Allow-Origin",
-                "value": "*"
-              }
-            ]
-          }
-        }
-      },
-      "id": "respond-to-webhook",
-      "name": "Respond to Webhook",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.1,
-      "position": [1980, 400]
-    },
-    {
-      "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{ $json }}",
-        "options": {
-          "responseHeaders": {
-            "entries": [
-              {
-                "name": "Access-Control-Allow-Origin",
-                "value": "*"
-              }
-            ]
-          }
-        }
-      },
-      "id": "respond-error",
-      "name": "Respond Error",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.1,
-      "position": [1100, 160]
-    },
-    {
-      "parameters": {
-        "content": "## Chat Controller Workflow\n\nThis is the main entry point for the Ghana Tax Chatbot.\n\n### Flow:\n1. **Receive Chat Query** - Webhook at /chat-v2\n2. **Validate Input** - Check message validity\n3. **Check Validation** - Route errors vs valid\n4. **Classify Query** - GPT-4 classifies domain\n5. **Parse Classification** - Extract domain\n6. **Route by Domain** - Switch to appropriate handler\n7. **Call Specialist** - VAT or Income Tax webhook\n8. **Compile Response** - Merge and format\n9. **Respond** - Return to frontend\n\n### Domains:\n- **vat** → VAT Specialist workflow\n- **income_tax** → Income Tax Specialist workflow\n- **greeting** → Local greeting handler\n- **general** → Clarification request\n\n### Setup:\n- Update specialist URLs with your n8n instance\n- Configure OpenAI credentials\n- Optional: Add Supabase logging"
+        "content": "## Chat Controller Workflow\n\nMain entry point for the Ghana Tax Chatbot.\n\n**Flow:**\n1. Receive query from frontend (any language)\n2. Translate non-English input to English (Twi/Ga/Ewe)\n3. Classify domain (VAT, Income Tax, Greeting, General)\n4. Route to appropriate specialist sub-workflow\n5. Translate response back to user's language\n6. Return compiled response\n\n**Key Design Decision:**\nTranslation logic is centralized here (DRY principle).\nSpecialists work in English only.\n\n**Supported Languages:**\n- English (en) - no translation\n- Pidgin (pidgin) - no translation\n- Twi (twi) - translated\n- Ga (ga) - translated\n- Ewe (ewe) - translated"
       },
       "id": "sticky-note",
       "name": "Sticky Note",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
-      "position": [180, 60],
+      "position": [180, 60]
+    },
+    {
       "parameters": {
-        "width": 350,
-        "height": 450
-      }
+        "content": "## Input Translation Branch\n\nTranslates Twi/Ga/Ewe to English.\nPidgin and English pass through unchanged."
+      },
+      "id": "sticky-note-translation",
+      "name": "Sticky Note - Translation",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [1040, 140]
+    },
+    {
+      "parameters": {
+        "content": "## Domain Routing\n\nRoutes to:\n- VAT Specialist\n- Income Tax Specialist\n- Greeting Handler\n- Ambiguous Handler"
+      },
+      "id": "sticky-note-routing",
+      "name": "Sticky Note - Routing",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [1920, 60]
+    },
+    {
+      "parameters": {
+        "content": "## Output Translation\n\nTranslates English specialist response\nback to user's original language."
+      },
+      "id": "sticky-note-output",
+      "name": "Sticky Note - Output",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [2800, 140]
     }
   ],
   "connections": {
@@ -377,43 +471,65 @@
       "main": [
         [
           {
-            "node": "Check Validation",
+            "node": "Check Input Translation",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Check Validation": {
+    "Check Input Translation": {
       "main": [
         [
           {
-            "node": "Return Error Response",
+            "node": "Route Input Translation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Input Translation": {
+      "main": [
+        [
+          {
+            "node": "Translate Input to English",
             "type": "main",
             "index": 0
           }
         ],
         [
           {
-            "node": "Classify Query",
+            "node": "Merge Translated Input",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Return Error Response": {
+    "Translate Input to English": {
       "main": [
         [
           {
-            "node": "Respond Error",
+            "node": "Merge Translated Input",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Classify Query": {
+    "Merge Translated Input": {
+      "main": [
+        [
+          {
+            "node": "Classify Domain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify Domain": {
       "main": [
         [
           {
@@ -471,7 +587,7 @@
       "main": [
         [
           {
-            "node": "Compile Response",
+            "node": "Prepare Output Translation",
             "type": "main",
             "index": 0
           }
@@ -482,7 +598,7 @@
       "main": [
         [
           {
-            "node": "Compile Response",
+            "node": "Prepare Output Translation",
             "type": "main",
             "index": 0
           }
@@ -493,7 +609,7 @@
       "main": [
         [
           {
-            "node": "Compile Response",
+            "node": "Prepare Output Translation",
             "type": "main",
             "index": 0
           }
@@ -504,6 +620,35 @@
       "main": [
         [
           {
+            "node": "Prepare Output Translation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Output Translation": {
+      "main": [
+        [
+          {
+            "node": "Route Output Translation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Output Translation": {
+      "main": [
+        [
+          {
+            "node": "Translate Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
             "node": "Compile Response",
             "type": "main",
             "index": 0
@@ -511,11 +656,11 @@
         ]
       ]
     },
-    "Compile Response": {
+    "Translate Response": {
       "main": [
         [
           {
-            "node": "Respond to Webhook",
+            "node": "Compile Response",
             "type": "main",
             "index": 0
           }

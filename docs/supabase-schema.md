@@ -1,6 +1,17 @@
 # Supabase Table Architecture for Ghana Tax Chatbot
 
-## Recommendation: Single Table with Domain Filtering
+> **Architecture Decision Note (v2):**
+>
+> Two approaches are documented. The prompts v2 (`02-chat-controller-workflow-v2.md`, `03-specialist-subagent-workflow-v2.md`) use **separate tables per domain** for cleaner specialist isolation. The original approach below uses a single table with domain filtering.
+>
+> **Option A - Separate Tables** (Prompts v2): `vat_documents`, `income_tax_documents`, etc.  
+> **Option B - Single Table** (Prompts v1): `tax_documents` with `domain` column filter
+>
+> Both are functionally equivalent. Choose based on preference.
+
+---
+
+## Option B: Single Table with Domain Filtering (Original)
 
 For this project, we use a **single `tax_documents` table** with a `domain` column to separate VAT, Income Tax, and other specializations. This is simpler and more maintainable than separate tables per domain.
 

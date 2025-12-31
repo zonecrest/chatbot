@@ -1,0 +1,615 @@
+{
+  "name": "document-ingestion",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Document Ingestion Workflow\n\nIngests Ghana tax legislation PDFs into the vector store.\n\n**Flow:**\n1. Manual trigger with file path and domain\n2. Download PDF from Google Drive\n3. Extract text from PDF\n4. LLM classifies document type\n5. Branch: Principal Act vs Amendment\n6. Parse structure / Merge amendment\n7. Generate plain-language summaries\n8. Create embeddings\n9. Upsert to Supabase\n\n**Credentials Required:**\n- Google Drive OAuth\n- OpenAI API Key\n- Supabase connection"
+      },
+      "id": "sticky-note",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [180, 60]
+    },
+    {
+      "parameters": {
+        "formTitle": "Document Ingestion",
+        "formDescription": "Upload a Ghana tax legislation document for processing",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Google Drive File ID",
+              "fieldType": "text",
+              "requiredField": true,
+              "placeholder": "e.g., 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms"
+            },
+            {
+              "fieldLabel": "Domain",
+              "fieldType": "dropdown",
+              "requiredField": true,
+              "fieldOptions": {
+                "values": [
+                  { "option": "vat" },
+                  { "option": "income_tax" }
+                ]
+              }
+            },
+            {
+              "fieldLabel": "Document Type",
+              "fieldType": "dropdown",
+              "requiredField": true,
+              "fieldOptions": {
+                "values": [
+                  { "option": "principal_act" },
+                  { "option": "amendment" }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "id": "manual-trigger",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.1,
+      "position": [220, 300],
+      "webhookId": "document-ingestion"
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $json['Google Drive File ID'] }}",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "id": "google-drive-download",
+      "name": "Google Drive - Download",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [440, 300],
+      "notesInFlow": true,
+      "notes": "Download PDF from Google Drive"
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "options": {}
+      },
+      "id": "extract-pdf",
+      "name": "Extract PDF Text",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [660, 300],
+      "notesInFlow": true,
+      "notes": "Extract text from PDF"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nconst triggerData = $('Manual Trigger').first().json;\n\nreturn {\n  json: {\n    text: input.text || input.data || '',\n    file_id: triggerData['Google Drive File ID'],\n    domain: triggerData['Domain'],\n    document_type_hint: triggerData['Document Type']\n  }\n};"
+      },
+      "id": "prepare-text",
+      "name": "Prepare Text",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [880, 300]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4-turbo",
+        "options": {
+          "temperature": 0.1
+        },
+        "messages": {
+          "values": [
+            {
+              "type": "system",
+              "content": "You are a legal document classifier for Ghana tax legislation.\nAnalyze the document and extract key metadata.\nReturn ONLY valid JSON, no markdown code blocks."
+            },
+            {
+              "type": "user",
+              "content": "=Analyze this Ghana tax legislation document and return JSON:\n\n{{ $json.text.substring(0, 8000) }}\n\nReturn this exact JSON structure:\n{\n  \"act_name\": \"Full name of the act\",\n  \"act_number\": \"e.g., Act 870\",\n  \"document_type\": \"principal_act\" or \"amendment\",\n  \"domain\": \"vat\" or \"income_tax\",\n  \"date_enacted\": \"YYYY-MM-DD or null\",\n  \"amends_act\": \"Act number being amended, or null if principal\",\n  \"summary\": \"One paragraph summary of the document\"\n}"
+            }
+          ]
+        }
+      },
+      "id": "classify-document",
+      "name": "LLM - Classify Document",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [1100, 300],
+      "notesInFlow": true,
+      "notes": "Identify document type and metadata"
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst preparedText = $('Prepare Text').first().json;\nlet parsed;\n\ntry {\n  let content = response.message?.content || response.content || response.text;\n  if (typeof content === 'string') {\n    // Clean potential markdown code blocks\n    content = content.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();\n    parsed = JSON.parse(content);\n  } else {\n    parsed = content;\n  }\n} catch (e) {\n  throw new Error(`Failed to parse document metadata: ${e.message}`);\n}\n\n// Use hint from trigger if LLM classification differs\nconst domain = parsed.domain || preparedText.domain;\nconst documentType = parsed.document_type || preparedText.document_type_hint;\n\nreturn {\n  json: {\n    ...parsed,\n    domain: domain,\n    document_type: documentType,\n    original_text: preparedText.text,\n    file_id: preparedText.file_id\n  }\n};"
+      },
+      "id": "parse-classification",
+      "name": "Parse Classification",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1320, 300]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.document_type }}",
+                    "rightValue": "amendment",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "amendment"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.document_type }}",
+                    "rightValue": "principal_act",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "principal_act"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "switch-document-type",
+      "name": "Switch - Document Type",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [1540, 300]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4-turbo",
+        "options": {
+          "temperature": 0.1
+        },
+        "messages": {
+          "values": [
+            {
+              "type": "system",
+              "content": "You are a legal document parser specializing in Ghana legislation.\nParse the hierarchical structure of this tax act.\nBe precise with section numbers and preserve exact legal text.\nReturn ONLY valid JSON, no markdown code blocks."
+            },
+            {
+              "type": "user",
+              "content": "=Parse this Ghana tax act into structured JSON:\n\nAct: {{ $json.act_name }} ({{ $json.act_number }})\n\nTEXT:\n{{ $json.original_text.substring(0, 30000) }}\n\nReturn JSON with this structure:\n{\n  \"act_name\": \"...\",\n  \"act_number\": \"...\",\n  \"parts\": [\n    {\n      \"number\": \"I\",\n      \"title\": \"Part title\",\n      \"sections\": [\n        {\n          \"number\": \"1\",\n          \"title\": \"Section title\",\n          \"content\": \"Full section text\",\n          \"subsections\": [\n            {\n              \"number\": \"1\",\n              \"content\": \"Subsection text\",\n              \"paragraphs\": [\n                {\"letter\": \"a\", \"content\": \"Paragraph text\"}\n              ]\n            }\n          ]\n        }\n      ]\n    }\n  ]\n}"
+            }
+          ]
+        }
+      },
+      "id": "parse-structure",
+      "name": "LLM - Parse Act Structure",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [1760, 420],
+      "notesInFlow": true,
+      "notes": "Parse principal act structure"
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst metadata = $('Parse Classification').first().json;\nlet parsed;\n\ntry {\n  let content = response.message?.content || response.content || response.text;\n  if (typeof content === 'string') {\n    content = content.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();\n    parsed = JSON.parse(content);\n  } else {\n    parsed = content;\n  }\n} catch (e) {\n  throw new Error(`Failed to parse act structure: ${e.message}`);\n}\n\nconst chunks = [];\nconst domain = metadata.domain;\nconst actName = parsed.act_name || metadata.act_name;\nconst actNumber = parsed.act_number || metadata.act_number;\n\n// Process each part\nfor (const part of parsed.parts || []) {\n  for (const section of part.sections || []) {\n    // Create breadcrumb\n    const breadcrumb = `${actName} > Part ${part.number}: ${part.title} > Section ${section.number}`;\n    \n    // Combine section content\n    let fullContent = `Section ${section.number} - ${section.title}\\n\\n`;\n    fullContent += section.content || '';\n    \n    // Add subsections\n    for (const subsection of section.subsections || []) {\n      fullContent += `\\n(${subsection.number}) ${subsection.content}`;\n      for (const para of subsection.paragraphs || []) {\n        fullContent += `\\n  (${para.letter}) ${para.content}`;\n      }\n    }\n    \n    chunks.push({\n      content: fullContent,\n      domain: domain,\n      act_name: actName,\n      act_number: actNumber,\n      document_type: 'principal_act',\n      part_number: part.number,\n      part_title: part.title,\n      section_number: section.number,\n      section_title: section.title,\n      breadcrumb: breadcrumb,\n      effective_date: metadata.date_enacted,\n      metadata: {\n        source_file: metadata.file_id || 'unknown',\n        parsed_at: new Date().toISOString()\n      }\n    });\n  }\n}\n\nreturn chunks.map(chunk => ({ json: chunk }));"
+      },
+      "id": "create-chunks-principal",
+      "name": "Create Chunks - Principal",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1980, 420]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT * FROM tax_documents WHERE act_number = '{{ $json.amends_act }}'",
+        "options": {}
+      },
+      "id": "load-base-act",
+      "name": "Supabase - Load Base Act",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1760, 180],
+      "notesInFlow": true,
+      "notes": "Load existing sections for amendment"
+    },
+    {
+      "parameters": {
+        "model": "gpt-4-turbo",
+        "options": {
+          "temperature": 0.1
+        },
+        "messages": {
+          "values": [
+            {
+              "type": "system",
+              "content": "You are a legal document specialist who merges amendments into base legislation.\nGiven the base act sections and an amendment, produce the consolidated text.\nTrack what was changed and when.\nReturn ONLY valid JSON, no markdown code blocks."
+            },
+            {
+              "type": "user",
+              "content": "=BASE ACT SECTIONS:\n{{ JSON.stringify($('Supabase - Load Base Act').all().map(item => ({\n  section_number: item.json.section_number,\n  section_title: item.json.section_title,\n  content: item.json.content\n})), null, 2) }}\n\nAMENDMENT TEXT:\n{{ $('Parse Classification').first().json.original_text.substring(0, 15000) }}\n\nAMENDMENT INFO:\n- Amendment Act: {{ $('Parse Classification').first().json.act_name }}\n- Amendment Number: {{ $('Parse Classification').first().json.act_number }}\n\nFor each section affected by the amendment, return:\n{\n  \"amended_sections\": [\n    {\n      \"section_number\": \"15\",\n      \"section_title\": \"...\",\n      \"consolidated_content\": \"The new full text after applying amendment\",\n      \"change_type\": \"substituted\" | \"inserted\" | \"deleted\" | \"amended\",\n      \"change_description\": \"Brief description of what changed\",\n      \"amendment_reference\": \"Act number and section that made this change\"\n    }\n  ]\n}"
+            }
+          ]
+        }
+      },
+      "id": "merge-amendment",
+      "name": "LLM - Merge Amendment",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [1980, 180],
+      "notesInFlow": true,
+      "notes": "Merge amendment into base act"
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst baseChunks = $('Supabase - Load Base Act').all();\nconst amendmentInfo = $('Parse Classification').first().json;\n\nlet amendmentResult;\ntry {\n  let content = response.message?.content || response.content || response.text;\n  if (typeof content === 'string') {\n    content = content.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();\n    amendmentResult = JSON.parse(content);\n  } else {\n    amendmentResult = content;\n  }\n} catch (e) {\n  throw new Error(`Failed to parse amendment result: ${e.message}`);\n}\n\nconst updatedChunks = [];\n\nfor (const amended of amendmentResult.amended_sections || []) {\n  // Find original chunk\n  const original = baseChunks.find(c => \n    c.json.section_number === amended.section_number\n  );\n  \n  const amendmentHistory = original?.json.amendment_history || [];\n  amendmentHistory.push({\n    amendment_act: amendmentInfo.act_number,\n    amendment_name: amendmentInfo.act_name,\n    change_type: amended.change_type,\n    change_description: amended.change_description,\n    effective_date: amendmentInfo.date_enacted\n  });\n  \n  updatedChunks.push({\n    // Keep original metadata\n    ...(original?.json || {}),\n    // Update content\n    content: amended.consolidated_content,\n    section_title: amended.section_title,\n    section_number: amended.section_number,\n    // Update amendment tracking\n    document_type: 'consolidated',\n    last_amended_by: amendmentInfo.act_number,\n    amendment_history: amendmentHistory,\n    domain: original?.json.domain || amendmentInfo.domain,\n    act_name: original?.json.act_name || amendmentInfo.amends_act,\n    act_number: original?.json.act_number || amendmentInfo.amends_act,\n    breadcrumb: original?.json.breadcrumb || `${amendmentInfo.amends_act} > Section ${amended.section_number}`,\n    metadata: {\n      ...original?.json.metadata,\n      last_consolidated: new Date().toISOString(),\n      amendment_source: amendmentInfo.file_id\n    }\n  });\n}\n\nreturn updatedChunks.map(chunk => ({ json: chunk }));"
+      },
+      "id": "create-chunks-amendment",
+      "name": "Create Chunks - Amendment",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2200, 180]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4-turbo",
+        "options": {
+          "temperature": 0.3
+        },
+        "messages": {
+          "values": [
+            {
+              "type": "system",
+              "content": "You are a tax advisor who explains complex legislation in simple terms.\nGenerate a plain-language summary of this legal section.\nUse language a market trader in Ghana would understand.\nKeep it under 100 words."
+            },
+            {
+              "type": "user",
+              "content": "=Summarize this tax law section in plain language:\n\n{{ $json.breadcrumb }}\n\n{{ $json.content }}"
+            }
+          ]
+        }
+      },
+      "id": "generate-summary",
+      "name": "LLM - Generate Summary",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [2420, 300],
+      "notesInFlow": true,
+      "notes": "Generate plain-language summary"
+    },
+    {
+      "parameters": {
+        "jsCode": "const chunk = $('Create Chunks - Principal').first()?.json || $('Create Chunks - Amendment').first()?.json;\nconst summaryResponse = $input.first().json;\nconst summary = summaryResponse.message?.content || summaryResponse.content || summaryResponse.text || '';\n\n// Get the current item from the loop\nconst currentChunk = $input.context?.currentItem?.json || chunk;\n\nreturn {\n  json: {\n    ...currentChunk,\n    summary: summary.trim()\n  }\n};"
+      },
+      "id": "add-summary",
+      "name": "Add Summary to Chunk",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2640, 300]
+    },
+    {
+      "parameters": {
+        "model": "text-embedding-3-small",
+        "options": {}
+      },
+      "id": "generate-embedding",
+      "name": "Generate Embedding",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
+      "typeVersion": 1.2,
+      "position": [2860, 300],
+      "notesInFlow": true,
+      "notes": "OpenAI text-embedding-3-small"
+    },
+    {
+      "parameters": {
+        "jsCode": "const chunk = $('Add Summary to Chunk').first().json;\nconst embedding = $input.first().json;\n\nreturn {\n  json: {\n    ...chunk,\n    embedding: embedding.data || embedding.embedding\n  }\n};"
+      },
+      "id": "combine-embedding",
+      "name": "Combine Embedding",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3080, 300]
+    },
+    {
+      "parameters": {
+        "operation": "upsert",
+        "tableId": "tax_documents",
+        "conflictColumns": "act_number,section_number",
+        "dataToSend": "autoMapInputData"
+      },
+      "id": "upsert-supabase",
+      "name": "Supabase - Upsert",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [3300, 300],
+      "notesInFlow": true,
+      "notes": "Insert or update document in Supabase"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst firstItem = items[0]?.json || {};\n\nreturn {\n  json: {\n    status: 'success',\n    documents_processed: items.length,\n    domain: firstItem.domain,\n    act: firstItem.act_name,\n    act_number: firstItem.act_number,\n    document_type: firstItem.document_type,\n    timestamp: new Date().toISOString()\n  }\n};"
+      },
+      "id": "log-result",
+      "name": "Log Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3520, 300]
+    },
+    {
+      "parameters": {
+        "content": "## Principal Act Branch\n\nParses the hierarchical structure of a new act\nand creates chunks for each section."
+      },
+      "id": "sticky-principal",
+      "name": "Sticky Note - Principal",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [1700, 520]
+    },
+    {
+      "parameters": {
+        "content": "## Amendment Branch\n\nLoads existing base act sections,\nmerges changes, and tracks amendment history."
+      },
+      "id": "sticky-amendment",
+      "name": "Sticky Note - Amendment",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [1700, 60]
+    },
+    {
+      "parameters": {
+        "content": "## Common Processing\n\nBoth branches merge here for:\n1. Summary generation\n2. Embedding creation\n3. Supabase upsert"
+      },
+      "id": "sticky-common",
+      "name": "Sticky Note - Common",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [2360, 440]
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Google Drive - Download",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Drive - Download": {
+      "main": [
+        [
+          {
+            "node": "Extract PDF Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract PDF Text": {
+      "main": [
+        [
+          {
+            "node": "Prepare Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Text": {
+      "main": [
+        [
+          {
+            "node": "LLM - Classify Document",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM - Classify Document": {
+      "main": [
+        [
+          {
+            "node": "Parse Classification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Classification": {
+      "main": [
+        [
+          {
+            "node": "Switch - Document Type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch - Document Type": {
+      "main": [
+        [
+          {
+            "node": "Supabase - Load Base Act",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "LLM - Parse Act Structure",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "LLM - Parse Act Structure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase - Load Base Act": {
+      "main": [
+        [
+          {
+            "node": "LLM - Merge Amendment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM - Merge Amendment": {
+      "main": [
+        [
+          {
+            "node": "Create Chunks - Amendment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Chunks - Amendment": {
+      "main": [
+        [
+          {
+            "node": "LLM - Generate Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM - Parse Act Structure": {
+      "main": [
+        [
+          {
+            "node": "Create Chunks - Principal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Chunks - Principal": {
+      "main": [
+        [
+          {
+            "node": "LLM - Generate Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM - Generate Summary": {
+      "main": [
+        [
+          {
+            "node": "Add Summary to Chunk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Add Summary to Chunk": {
+      "main": [
+        [
+          {
+            "node": "Generate Embedding",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Embedding": {
+      "main": [
+        [
+          {
+            "node": "Combine Embedding",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Combine Embedding": {
+      "main": [
+        [
+          {
+            "node": "Supabase - Upsert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase - Upsert": {
+      "main": [
+        [
+          {
+            "node": "Log Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveExecutionProgress": true,
+    "saveDataSuccessExecution": "all",
+    "executionTimeout": 300
+  },
+  "tags": [
+    { "name": "Ghana" },
+    { "name": "Chatbot" },
+    { "name": "GRA" },
+    { "name": "Ingestion" }
+  ]
+}

@@ -100,7 +100,53 @@ Handles Income Tax queries in English only.
 - Table: `income_tax_documents`
 - Function: `match_income_tax_documents(embedding, count)`
 
-### 4. chat-workflow.json (Legacy)
+### 4. document-ingestion.json
+
+Ingests Ghana tax legislation PDFs into the vector store.
+
+**Trigger:** Form-based manual trigger
+
+**Features:**
+- Download PDF from Google Drive
+- Extract text from PDF
+- LLM-based document classification (VAT vs Income Tax, Principal vs Amendment)
+- Hierarchical structure parsing for principal acts
+- Amendment merging for consolidated documents
+- Plain-language summary generation
+- Embedding creation with OpenAI
+- Upsert to Supabase with conflict resolution
+
+**Flow:**
+```
+PDF in Google Drive
+        │
+        ▼
+   Parse Structure (LLM)
+        │
+        ▼
+   Is Amendment? ──Yes──▶ Load Base Act ──▶ Merge Amendment (LLM)
+        │                                           │
+        No                                          │
+        │                                           │
+        ▼                                           ▼
+   Generate Summaries (LLM)◀────────────────────────┘
+        │
+        ▼
+   Create Chunks with Metadata
+        │
+        ▼
+   Generate Embeddings (OpenAI)
+        │
+        ▼
+   Upsert to Supabase
+```
+
+**Inputs:**
+- Google Drive File ID
+- Domain: `vat` or `income_tax`
+- Document Type: `principal_act` or `amendment`
+
+### 5. chat-workflow.json (Legacy)
 
 Original single-workflow implementation. Kept for reference.
 
@@ -220,6 +266,103 @@ END;
 $$;
 ```
 
+### Unified Tax Documents Table (for Ingestion)
+
+The document ingestion workflow uses a unified table with domain filtering:
+
+```sql
+-- Enable pgvector extension (run once)
+CREATE EXTENSION IF NOT EXISTS vector;
+
+-- Unified documents table for ingestion
+CREATE TABLE tax_documents (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  content TEXT NOT NULL,
+  embedding VECTOR(1536),
+
+  -- Domain classification
+  domain TEXT NOT NULL,  -- 'vat', 'income_tax'
+
+  -- Document identification
+  act_name TEXT,
+  act_number TEXT,
+  document_type TEXT,  -- 'principal_act', 'amendment', 'consolidated'
+
+  -- Section identification
+  part_number TEXT,
+  part_title TEXT,
+  section_number TEXT,
+  section_title TEXT,
+  subsection TEXT,
+
+  -- Temporal tracking
+  effective_date DATE,
+  last_amended_by TEXT,
+  amendment_history JSONB,
+
+  -- Generated content
+  summary TEXT,
+  breadcrumb TEXT,  -- "VAT Act 2013 > Part III > Section 15"
+
+  -- Source tracking
+  source_file TEXT,
+  processed_at TIMESTAMP DEFAULT NOW(),
+
+  -- Flexible metadata
+  metadata JSONB,
+
+  -- Unique constraint for upsert
+  UNIQUE (act_number, section_number)
+);
+
+-- Indexes for efficient retrieval
+CREATE INDEX ON tax_documents USING ivfflat (embedding vector_cosine_ops)
+  WITH (lists = 100);
+CREATE INDEX ON tax_documents (domain);
+CREATE INDEX ON tax_documents (act_number);
+CREATE INDEX ON tax_documents (section_number);
+
+-- Function for similarity search with domain filter
+CREATE OR REPLACE FUNCTION match_documents(
+  query_embedding VECTOR(1536),
+  match_domain TEXT,
+  match_count INT DEFAULT 5
+)
+RETURNS TABLE (
+  id UUID,
+  content TEXT,
+  summary TEXT,
+  breadcrumb TEXT,
+  section_number TEXT,
+  section_title TEXT,
+  act_name TEXT,
+  similarity FLOAT
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT
+    t.id,
+    t.content,
+    t.summary,
+    t.breadcrumb,
+    t.section_number,
+    t.section_title,
+    t.act_name,
+    1 - (t.embedding <=> query_embedding) AS similarity
+  FROM tax_documents t
+  WHERE t.domain = match_domain
+  ORDER BY t.embedding <=> query_embedding
+  LIMIT match_count;
+END;
+$$;
+```
+
+**Note:** You can use either:
+- **Unified table** (`tax_documents` with domain filter) - simpler, used by ingestion
+- **Separate tables** (`vat_documents`, `income_tax_documents`) - optimized for specialists
+
 ## Setup Instructions
 
 ### 1. Import Workflows
@@ -227,6 +370,7 @@ $$;
 1. Open n8n
 2. Go to Workflows > Import from File
 3. Import in this order:
+   - `document-ingestion.json` (for populating the database)
    - `vat-specialist.json`
    - `income-tax-specialist.json`
    - `chat-controller.json`
@@ -243,7 +387,13 @@ $$;
 **Supabase:**
 1. Add "Supabase" credential
 2. Enter your project URL and API key
-3. Connect to Search Documents nodes
+3. Connect to Search Documents and Upsert nodes
+
+**Google Drive (for Document Ingestion):**
+1. Add "Google Drive OAuth2" credential
+2. Configure OAuth consent screen in Google Cloud Console
+3. Add the redirect URI from n8n
+4. Connect to the Google Drive Download node in document-ingestion
 
 ### 3. Update Specialist URLs
 
@@ -351,6 +501,20 @@ const CONFIG = {
 - [ ] English Income Tax question → English response
 - [ ] Error handling works if specialist times out
 
+### Document Ingestion
+- [ ] Manual trigger form works
+- [ ] PDF downloads from Google Drive
+- [ ] PDF text extraction successful
+- [ ] Document type classification accurate
+- [ ] Principal act parsing creates correct structure
+- [ ] Chunks have proper breadcrumbs
+- [ ] Summaries are plain-language and accurate
+- [ ] Embeddings generated successfully
+- [ ] Supabase upsert works
+- [ ] Amendment detection works
+- [ ] Amendment merging produces correct consolidated text
+- [ ] Amendment history tracked correctly
+
 ## Troubleshooting
 
 **No response from AI:**
@@ -376,6 +540,7 @@ const CONFIG = {
 
 - OpenAI API Key
 - Supabase connection (URL + API Key)
+- Google Drive OAuth2 (for document ingestion)
 
 ## Adding New Specialists (Future)
 
